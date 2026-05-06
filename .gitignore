@@ -12,7 +12,6 @@ node_modules/
 dist/
 dist-ssr/
 coverage/
-android/
 
 # Local environment and machine-specific config
 .env
