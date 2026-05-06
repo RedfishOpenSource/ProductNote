@@ -1,0 +1,69 @@
+:root {
+  font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--app-text);
+  background: var(--app-bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app,
+ion-app,
+ion-content {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--app-bg);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+img {
+  display: block;
+}
+
+ion-content {
+  --background: var(--app-bg);
+}
+
+ion-title {
+  color: var(--app-title);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+ion-toolbar {
+  --background: #ffffffcc;
+  --border-color: transparent;
+}
+
+.page-shell {
+  padding: 16px;
+}
+
+.panel-card {
+  background: var(--app-card);
+  border: 1px solid rgba(220, 223, 230, 0.8);
+  border-radius: var(--app-radius);
+  box-shadow: var(--app-shadow);
+  padding: 16px;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}

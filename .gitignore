@@ -1,0 +1,84 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+coverage/
+android/
+
+# Local environment and machine-specific config
+.env
+.env.*.local
+*.local
+
+# Capacitor native build artifacts
+.gradle/
+.vite/
+android/.gradle/
+android/.idea/
+android/.kotlin/
+android/.cxx/
+android/.externalNativeBuild/
+android/build/
+android/app/build/
+android/bin/
+android/gen/
+android/out/
+android/local.properties
+android/captures/
+android/lint/
+android/capacitor-cordova-android-plugins/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/app/src/main/res/xml/config.xml
+ios/App/App/public/
+ios/App/build/
+ios/DerivedData/
+
+# Android packages and signing files
+*.apk
+*.aab
+*.ap_
+*.keystore
+*.jks
+*.hprof
+
+# Local caches and temp files
+.cache/
+.temp/
+tmp/
+temp/
+.eslintcache
+*.tsbuildinfo
+*.tmp
+*.orig
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.vs/
+.idea/
+.settings/
+.classpath
+.project
+.DS_Store
+Thumbs.db
+*.iml
+*.ipr
+*.iws
+*.user
+*.userossc
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

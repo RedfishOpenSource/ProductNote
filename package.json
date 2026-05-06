@@ -1,0 +1,36 @@
+{
+  "name": "productitem",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview",
+    "sync:android": "npm run build && npx cap sync android",
+    "open:android": "npx cap open android",
+    "run:android": "npm run build && npx cap run android"
+  },
+  "dependencies": {
+    "@capacitor-community/file-opener": "^6.0.0",
+    "@capacitor-community/sqlite": "^6.0.0",
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/camera": "^6.1.2",
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/filesystem": "^6.0.2",
+    "@capacitor/preferences": "^6.0.2",
+    "@capacitor/share": "^6.0.2",
+    "@ionic/vue": "^8.8.5",
+    "@ionic/vue-router": "^8.8.5",
+    "ionicons": "^8.0.13",
+    "vue": "^3.4.15",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.3",
+    "typescript": "5.4.5",
+    "vite": "^5.1.0",
+    "vue-tsc": "^1.8.27"
+  }
+}
