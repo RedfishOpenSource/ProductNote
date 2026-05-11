@@ -1,14 +1,11 @@
 :root {
-  --ion-color-primary: #409eff;
-  --ion-color-primary-rgb: 64, 158, 255;
-  --ion-color-primary-contrast: #ffffff;
-  --ion-color-primary-shade: #388cdc;
-  --ion-color-primary-tint: #53a8ff;
-
-  --ion-color-success: #67c23a;
-  --ion-color-warning: #e6a23c;
-  --ion-color-danger: #f56c6c;
-  --ion-color-medium: #909399;
+  --app-primary: #409eff;
+  --app-primary-dark: #388cdc;
+  --app-primary-light: #53a8ff;
+  --app-success: #67c23a;
+  --app-warning: #e6a23c;
+  --app-danger: #f56c6c;
+  --app-muted: #909399;
 
   --app-bg: #f5f7fa;
   --app-card: #ffffff;

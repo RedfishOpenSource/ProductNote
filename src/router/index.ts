@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from '@ionic/vue-router'
+import { createRouter, createWebHistory } from 'vue-router'
 import ProductFormPage from '../views/ProductFormPage.vue'
 import ProductListPage from '../views/ProductListPage.vue'
 

@@ -226,7 +226,7 @@ async function searchProductsByFallback(file: StoredFile, products: Product[]): 
 }
 
 export function isVisualSearchSupported(): boolean {
-  return hasNativeVisualSearch() || (isAndroid && canUseFallbackVisualSearch())
+  return hasNativeVisualSearch() || canUseFallbackVisualSearch()
 }
 
 export async function getVisualModelInfo(): Promise<VisualModelInfo> {

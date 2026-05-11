@@ -14,9 +14,7 @@
 
 html,
 body,
-#app,
-ion-app,
-ion-content {
+#app {
   min-height: 100%;
 }
 
@@ -36,23 +34,28 @@ img {
   display: block;
 }
 
-ion-content {
-  --background: var(--app-bg);
-}
-
-ion-title {
-  color: var(--app-title);
-  font-size: 22px;
-  font-weight: 700;
-}
-
-ion-toolbar {
-  --background: #ffffffcc;
-  --border-color: transparent;
+#app {
+  min-height: 100vh;
 }
 
 .page-shell {
   padding: 16px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px 18px;
+}
+
+.page-title {
+  margin: 0;
+  color: var(--app-title);
+  font-size: 22px;
+  font-weight: 700;
 }
 
 .panel-card {

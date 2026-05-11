@@ -19,15 +19,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-- This is a Vue 3 + TypeScript + Vite app using Ionic Vue for UI and Capacitor for native device integration.
-- App bootstrap is minimal: `src/main.ts` creates the Vue app, installs `IonicVue` and the router, then mounts `src/App.vue`, which only hosts `ion-router-outlet`.
+- This is a Vue 3 + TypeScript + Vite app using Element Plus for UI and Capacitor for native device integration.
+- App bootstrap is minimal: `src/main.ts` creates the Vue app, installs `Element Plus` and the router, then mounts `src/App.vue`, which only hosts `router-view`.
 - Routing lives in `src/router/index.ts` and is intentionally small: `/` shows the product list, `/product/new` creates a product, and `/product/:id` edits an existing product using the same form page.
 
 ## Product Flow
 
 - `src/views/ProductListPage.vue` is the main screen. It loads products, handles text search, toggles between card/list layouts, imports/exports backup JSON, and drives photo-based search.
 - `src/views/ProductFormPage.vue` owns create/edit/delete flows for a single product, including image capture, attachment upload, field validation, and persistence.
-- The list page refreshes on both `onMounted` and Ionic `onIonViewWillEnter`, so navigation back from the form reloads persisted data.
+- The list page refreshes on `onMounted`; because the app now uses a plain `router-view`, navigating back from the form remounts the list and reloads persisted data.
 
 ## Data and Storage
 
