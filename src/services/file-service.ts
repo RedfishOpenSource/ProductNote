@@ -7,20 +7,25 @@ import { createId } from './id'
 
 const isNativePlatform = Capacitor.getPlatform() !== 'web'
 
+const mimeTypeToExtension: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+  'video/webm': 'webm',
+  'video/x-matroska': 'mkv',
+  'application/pdf': 'pdf',
+  'text/plain': 'txt',
+}
+
 function normalizeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-一-龥]/g, '-').replace(/-+/g, '-')
 }
 
 function getExtensionFromMimeType(mimeType: string) {
   if (!mimeType) return 'dat'
-  const mapping: Record<string, string> = {
-    'image/jpeg': 'jpg',
-    'image/png': 'png',
-    'image/webp': 'webp',
-    'application/pdf': 'pdf',
-    'text/plain': 'txt',
-  }
-  return mapping[mimeType] ?? mimeType.split('/').pop() ?? 'dat'
+  return mimeTypeToExtension[mimeType] ?? mimeType.split('/').pop() ?? 'dat'
 }
 
 function stripDataPrefix(content: string) {

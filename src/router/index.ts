@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import ProductFormPage from '../views/ProductFormPage.vue'
 import ProductListPage from '../views/ProductListPage.vue'
+import ProductMediaPage from '../views/ProductMediaPage.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -16,10 +17,14 @@ const router = createRouter({
       component: ProductFormPage,
     },
     {
+      path: '/product/:id/media',
+      name: 'product-media',
+      component: ProductMediaPage,
+    },
+    {
       path: '/product/:id',
       name: 'product-edit',
       component: ProductFormPage,
-      props: true,
     },
   ],
 })

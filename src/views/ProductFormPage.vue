@@ -1,124 +1,202 @@
 <template>
-  <div class="page-shell form-shell">
-    <header class="page-header panel-card">
-      <el-button @click="goBack">
-        <el-icon><Back /></el-icon>
-        返回
-      </el-button>
-      <h1 class="page-title">{{ isEditMode ? '编辑商品' : '新增商品' }}</h1>
-      <div class="header-spacer" />
-    </header>
+  <div class="page-shell form-page">
+    <div class="form-top-shell">
+      <header class="page-header panel-card">
+        <button class="header-back-button" type="button" aria-label="返回上一页" @click="goBack">
+          <el-icon><Back /></el-icon>
+        </button>
+        <h1 class="page-title">{{ isEditMode ? '编辑商品' : '新增商品' }}</h1>
+      </header>
+    </div>
 
-    <section class="panel-card form-section">
-      <h2>基本信息</h2>
-      <label class="field-block">
-        <span>商品名称</span>
-        <el-input v-model="form.name" class="field-input" placeholder="请输入商品名称" />
-      </label>
-      <label class="field-block">
-        <span>价格</span>
-        <el-input v-model="form.priceText" class="field-input" inputmode="decimal" placeholder="请输入价格" />
-        <p v-if="priceError" class="field-error">{{ priceError }}</p>
-      </label>
-      <label class="field-block">
-        <span>商品描述</span>
-        <el-input
-          v-model="form.description"
-          class="field-input"
-          type="textarea"
-          :rows="4"
-          placeholder="例如：颜色、规格、适用场景"
-        />
-      </label>
-    </section>
+    <div class="form-scroll-shell">
+      <div class="form-scroll-area">
+        <div class="form-content">
+        <section class="panel-card form-section">
+          <div class="section-heading">
+            <h2>基本信息</h2>
+            <p>先填写商品名称、价格和商品描述。</p>
+          </div>
 
-    <section class="panel-card form-section">
-      <h2>商品图片</h2>
-      <div v-if="imagePreview" class="preview-box">
-        <img :src="imagePreview" alt="商品图片" class="preview-image" />
-      </div>
-      <div v-else class="preview-empty">
-        <el-icon><Picture /></el-icon>
-        <span>还没有上传图片</span>
-      </div>
-      <div class="button-grid">
-        <el-button type="primary" @click="takePhoto">
-          <el-icon><Camera /></el-icon>
-          拍照上传
-        </el-button>
-        <el-button @click="pickImage">
-          <el-icon><Picture /></el-icon>
-          选择图片
-        </el-button>
-      </div>
-    </section>
+          <div class="field-grid">
+            <label class="field-block">
+              <span>商品名称</span>
+              <el-input v-model="form.name" class="field-input" placeholder="请输入商品名称" />
+            </label>
+            <label class="field-block">
+              <span>价格</span>
+              <el-input v-model="form.priceText" class="field-input" inputmode="decimal" placeholder="请输入价格" />
+              <p v-if="priceError" class="field-error">{{ priceError }}</p>
+            </label>
+          </div>
 
-    <section class="panel-card form-section">
-      <h2>附件</h2>
-      <el-button @click="pickAttachments">
-        <el-icon><Paperclip /></el-icon>
-        选择附件
-      </el-button>
+          <label class="field-block field-block-expanded">
+            <span>商品描述</span>
+            <el-input
+              v-model="form.description"
+              class="field-input"
+              type="textarea"
+              :rows="4"
+              placeholder="例如：颜色、规格、适用场景"
+            />
+          </label>
+        </section>
 
-      <div v-if="form.attachments.length === 0" class="subtle-text">暂时没有附件</div>
-      <div v-else class="attachment-list">
-        <div v-for="(attachment, index) in form.attachments" :key="`${attachment.path}-${index}`" class="attachment-item">
-          <button class="attachment-main" type="button" @click="previewAttachment(attachment)">
-            <div>
-              <strong>{{ attachment.name }}</strong>
-              <span>{{ attachment.mimeType || '未知类型' }}</span>
+        <section class="panel-card form-section">
+          <div class="section-heading">
+            <h2>商品图片</h2>
+            <p>拍一张商品图，方便列表展示和图片搜索。</p>
+          </div>
+
+          <div v-if="imagePreview" class="preview-box">
+            <img :src="imagePreview" alt="商品图片" class="preview-image" />
+          </div>
+          <div v-else class="preview-empty">
+            <el-icon><Picture /></el-icon>
+            <span>还没有上传图片</span>
+          </div>
+
+          <div class="media-button-grid">
+            <el-button type="primary" @click="takePhoto">
+              <el-icon><Camera /></el-icon>
+              拍照上传
+            </el-button>
+            <el-button @click="pickImage">
+              <el-icon><Picture /></el-icon>
+              选择图片
+            </el-button>
+          </div>
+        </section>
+
+        <section class="panel-card form-section">
+          <div class="section-heading">
+            <h2>商品视频</h2>
+            <p>支持手机拍摄短视频，也可以从相册或文件中选择视频。</p>
+          </div>
+
+          <div v-if="videoAttachments.length === 0" class="preview-empty video-empty">
+            <el-icon><VideoCamera /></el-icon>
+            <span>还没有添加商品视频</span>
+          </div>
+          <div v-else class="file-list">
+            <div v-for="video in videoAttachments" :key="video.path" class="file-item">
+              <button class="file-main" type="button" @click="previewStoredFile(video)">
+                <div>
+                  <strong>{{ video.name }}</strong>
+                  <span>{{ video.mimeType || '视频文件' }}</span>
+                </div>
+              </button>
+              <el-button link type="danger" @click="removeStoredFile(video)">删除</el-button>
             </div>
-          </button>
-          <el-button link type="danger" @click="removeAttachment(index)">删除</el-button>
+          </div>
+
+          <div class="media-button-grid media-button-grid-spaced">
+            <el-button type="primary" @click="captureVideo">
+              <el-icon><VideoCamera /></el-icon>
+              拍摄视频
+            </el-button>
+            <el-button @click="pickVideos">
+              <el-icon><VideoCamera /></el-icon>
+              选择视频
+            </el-button>
+          </div>
+
+          <p v-if="isWebPlatform" class="subtle-text section-note">网页端建议尽量使用较短的视频，视频过大时可能保存失败。</p>
+        </section>
+
+        <section class="panel-card form-section">
+          <div class="section-heading">
+            <h2>附件</h2>
+            <p>可保存票据、说明书等其他文件。</p>
+          </div>
+
+          <el-button @click="pickAttachments">
+            <el-icon><Paperclip /></el-icon>
+            选择附件
+          </el-button>
+
+          <div v-if="otherAttachments.length === 0" class="subtle-text">暂时没有其他附件</div>
+          <div v-else class="file-list">
+            <div v-for="attachment in otherAttachments" :key="attachment.path" class="file-item">
+              <button class="file-main" type="button" @click="previewStoredFile(attachment)">
+                <div>
+                  <strong>{{ attachment.name }}</strong>
+                  <span>{{ attachment.mimeType || '未知类型' }}</span>
+                </div>
+              </button>
+              <el-button link type="danger" @click="removeStoredFile(attachment)">删除</el-button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-card form-section">
+          <div class="section-heading">
+            <h2>供应商信息</h2>
+            <p>补充联系人信息，后面找货更方便。</p>
+          </div>
+
+          <div class="field-grid">
+            <label class="field-block">
+              <span>供应商名称</span>
+              <el-input v-model="form.supplierName" class="field-input" placeholder="请输入供应商名称" />
+            </label>
+            <label class="field-block">
+              <span>供应商电话</span>
+              <el-input v-model="form.supplierPhone" class="field-input" inputmode="tel" placeholder="请输入供应商电话" />
+            </label>
+          </div>
+        </section>
+
+        <section class="action-stack">
+          <el-button :loading="saving" size="large" type="primary" @click="saveCurrentProduct">
+            {{ saving ? '保存中...' : '保存商品' }}
+          </el-button>
+          <el-button v-if="isEditMode" size="large" type="danger" plain @click="deleteCurrentProduct">删除商品</el-button>
+        </section>
         </div>
       </div>
-    </section>
-
-    <section class="panel-card form-section">
-      <h2>供应商信息</h2>
-      <label class="field-block">
-        <span>供应商名称</span>
-        <el-input v-model="form.supplierName" class="field-input" placeholder="请输入供应商名称" />
-      </label>
-      <label class="field-block">
-        <span>供应商电话</span>
-        <el-input v-model="form.supplierPhone" class="field-input" inputmode="tel" placeholder="请输入供应商电话" />
-      </label>
-    </section>
-
-    <section class="action-stack">
-      <el-button :loading="saving" size="large" type="primary" @click="saveCurrentProduct">
-        {{ saving ? '保存中...' : '保存商品' }}
-      </el-button>
-      <el-button v-if="isEditMode" size="large" type="danger" plain @click="deleteCurrentProduct">删除商品</el-button>
-    </section>
+    </div>
 
     <input ref="imageInput" accept="image/*" class="hidden-input" type="file" @change="handleImageSelected" />
+    <input ref="videoInput" accept="video/*" class="hidden-input" multiple type="file" @change="handleVideosSelected" />
+    <input
+      ref="videoCaptureInput"
+      accept="video/*"
+      capture="environment"
+      class="hidden-input"
+      type="file"
+      @change="handleVideosSelected"
+    />
     <input ref="attachmentInput" class="hidden-input" multiple type="file" @change="handleAttachmentsSelected" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { Back, Camera, Paperclip, Picture } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { Back, Camera, Paperclip, Picture, VideoCamera } from '@element-plus/icons-vue'
 import { Camera as CapacitorCamera, CameraResultType, CameraSource } from '@capacitor/camera'
+import { Capacitor } from '@capacitor/core'
+import { ElMessage } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { deleteStoredFile, openStoredFile, resolveFileUrl, saveFile, savePhotoBlob } from '../services/file-service'
 import { createId } from '../services/id'
 import { deleteProduct, getProductById, saveProduct } from '../services/product-store'
 import { removeProductVisualIndex, upsertProductVisualIndex } from '../services/visual-search-service'
+import { hasVideoFileExtension, isVideoMimeType, isVideoStoredFile } from '../types/product'
 import type { Product, StoredFile } from '../types/product'
 
 const router = useRouter()
 const route = useRoute()
 
 const imageInput = ref<HTMLInputElement | null>(null)
+const videoInput = ref<HTMLInputElement | null>(null)
+const videoCaptureInput = ref<HTMLInputElement | null>(null)
 const attachmentInput = ref<HTMLInputElement | null>(null)
 const imagePreview = ref('')
 const saving = ref(false)
 const createdAt = ref('')
 const removedFiles = ref<StoredFile[]>([])
+const isWebPlatform = Capacitor.getPlatform() === 'web'
 
 const form = reactive({
   name: '',
@@ -137,6 +215,23 @@ const priceError = computed(() => {
   if (!value) return ''
   return /^\d+(\.\d{1,2})?$/.test(value) ? '' : '价格只能填写数字，最多保留两位小数'
 })
+const attachmentGroups = computed(() => {
+  const videos: StoredFile[] = []
+  const others: StoredFile[] = []
+
+  for (const file of form.attachments) {
+    if (isVideoStoredFile(file)) {
+      videos.push(file)
+      continue
+    }
+
+    others.push(file)
+  }
+
+  return { videos, others }
+})
+const videoAttachments = computed(() => attachmentGroups.value.videos)
+const otherAttachments = computed(() => attachmentGroups.value.others)
 
 function showToast(message: string, color: 'success' | 'warning' | 'danger' = 'success') {
   const type = color === 'danger' ? 'error' : color
@@ -146,12 +241,28 @@ function showToast(message: string, color: 'success' | 'warning' | 'danger' = 's
   })
 }
 
+function isVideoSource(name: string, mimeType: string): boolean {
+  return isVideoMimeType(mimeType) || hasVideoFileExtension(name)
+}
+
+function isVideoFile(file: File): boolean {
+  return isVideoSource(file.name, file.type)
+}
+
 function goBack() {
   router.push('/')
 }
 
 function pickImage() {
   imageInput.value?.click()
+}
+
+function pickVideos() {
+  videoInput.value?.click()
+}
+
+function captureVideo() {
+  videoCaptureInput.value?.click()
 }
 
 function pickAttachments() {
@@ -198,6 +309,12 @@ async function replaceImage(file: StoredFile) {
   await refreshImagePreview()
 }
 
+async function addAttachmentFiles(files: File[]) {
+  for (const file of files) {
+    form.attachments.push(await saveFile(file, 'attachment'))
+  }
+}
+
 async function takePhoto() {
   try {
     const photo = await CapacitorCamera.getPhoto({
@@ -230,6 +347,31 @@ async function handleImageSelected(event: Event) {
   await replaceImage(storedFile)
 }
 
+async function handleVideosSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+
+  if (files.length === 0) return
+
+  const videoFiles = files.filter((file) => isVideoFile(file))
+  const ignoredCount = files.length - videoFiles.length
+
+  if (videoFiles.length === 0) {
+    showToast('请选择视频文件', 'warning')
+    return
+  }
+
+  await addAttachmentFiles(videoFiles)
+
+  if (ignoredCount > 0) {
+    showToast(`已添加 ${videoFiles.length} 个视频，忽略 ${ignoredCount} 个非视频文件`, 'warning')
+    return
+  }
+
+  showToast(`已添加 ${videoFiles.length} 个视频`)
+}
+
 async function handleAttachmentsSelected(event: Event) {
   const input = event.target as HTMLInputElement
   const files = Array.from(input.files ?? [])
@@ -237,26 +379,40 @@ async function handleAttachmentsSelected(event: Event) {
 
   if (files.length === 0) return
 
-  for (const file of files) {
-    form.attachments.push(await saveFile(file, 'attachment'))
+  await addAttachmentFiles(files)
+
+  const videoCount = files.filter((file) => isVideoFile(file)).length
+  const attachmentCount = files.length - videoCount
+
+  if (videoCount > 0 && attachmentCount > 0) {
+    showToast(`已添加 ${attachmentCount} 个附件，${videoCount} 个视频`)
+    return
   }
 
-  showToast(`已添加 ${files.length} 个附件`)
+  if (videoCount > 0) {
+    showToast(`已添加 ${videoCount} 个视频`)
+    return
+  }
+
+  showToast(`已添加 ${attachmentCount} 个附件`)
 }
 
-function removeAttachment(index: number) {
+function removeStoredFile(file: StoredFile) {
+  const index = form.attachments.indexOf(file)
+  if (index === -1) return
+
   const [removed] = form.attachments.splice(index, 1)
   if (removed) {
     removedFiles.value.push(removed)
   }
 }
 
-async function previewAttachment(file: StoredFile) {
+async function previewStoredFile(file: StoredFile) {
   try {
     await openStoredFile(file)
   } catch (error) {
     console.error(error)
-    showToast('附件打开失败', 'warning')
+    showToast('文件打开失败', 'warning')
   }
 }
 
@@ -358,39 +514,104 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.form-shell {
-  padding-bottom: 40px;
+.form-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  overflow: hidden;
+}
+
+.form-top-shell {
+  flex-shrink: 0;
+}
+
+.form-scroll-shell {
+  flex: 1;
+  min-height: 0;
+  margin: 0 -4px;
+  border-radius: var(--app-radius);
+  overflow: hidden;
+  background: var(--app-bg);
+}
+
+.form-scroll-area {
+  height: 100%;
+  overflow-y: auto;
+  padding: 0 4px calc(env(safe-area-inset-bottom, 0px) + 24px);
+}
+
+.form-content {
+  display: grid;
+  gap: 14px;
 }
 
 .page-header {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  display: flex;
   align-items: center;
+  gap: 12px;
+  margin-bottom: 0;
+}
+
+.header-back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 14px;
+  background: #f4f6fb;
+  color: var(--app-title);
+  cursor: pointer;
+}
+
+.header-back-button .el-icon {
+  font-size: 22px;
 }
 
 .page-title {
-  text-align: center;
-}
-
-.header-spacer {
-  width: 72px;
+  flex: 1;
+  margin: 0;
+  text-align: right;
 }
 
 .form-section {
+  margin-bottom: 0;
+}
+
+.section-heading {
   margin-bottom: 14px;
 }
 
-.form-section h2 {
-  margin: 0 0 14px;
+.section-heading h2 {
+  margin: 0;
   font-size: 20px;
   color: var(--app-title);
+}
+
+.section-heading p {
+  margin: 8px 0 0;
+  color: var(--app-text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .field-block {
   display: block;
 }
 
-.field-block + .field-block {
+.field-block-expanded {
   margin-top: 14px;
 }
 
@@ -442,10 +663,22 @@ onMounted(async () => {
   font-size: 40px;
 }
 
-.button-grid {
+.video-empty {
+  min-height: 140px;
+}
+
+.media-button-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.media-button-grid-spaced {
+  margin-top: 14px;
+}
+
+.media-button-grid :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .subtle-text {
@@ -453,13 +686,17 @@ onMounted(async () => {
   color: var(--app-text-secondary);
 }
 
-.attachment-list {
+.section-note {
+  line-height: 1.5;
+}
+
+.file-list {
   display: grid;
   gap: 10px;
   margin-top: 12px;
 }
 
-.attachment-item {
+.file-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -471,7 +708,7 @@ onMounted(async () => {
   background: #f9fafc;
 }
 
-.attachment-main {
+.file-main {
   flex: 1;
   border: 0;
   padding: 0;
@@ -480,12 +717,12 @@ onMounted(async () => {
   cursor: pointer;
 }
 
-.attachment-item strong,
-.attachment-item span {
+.file-item strong,
+.file-item span {
   display: block;
 }
 
-.attachment-item span {
+.file-item span {
   margin-top: 4px;
   color: var(--app-text-secondary);
   font-size: 13px;
@@ -494,7 +731,11 @@ onMounted(async () => {
 .action-stack {
   display: grid;
   gap: 12px;
-  margin-top: 22px;
+  margin-top: 8px;
+}
+
+.action-stack :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .hidden-input {
@@ -502,22 +743,17 @@ onMounted(async () => {
 }
 
 @media (max-width: 640px) {
-  .button-grid {
+  .field-grid,
+  .media-button-grid {
     grid-template-columns: 1fr;
   }
 
-  .page-header {
-    grid-template-columns: auto 1fr;
-    row-gap: 10px;
-  }
-
-  .header-spacer {
-    display: none;
-  }
-
   .page-title {
-    text-align: right;
     font-size: 20px;
+  }
+
+  .file-item {
+    align-items: flex-start;
   }
 }
 </style>

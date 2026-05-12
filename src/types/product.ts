@@ -1,4 +1,15 @@
-export type ViewMode = 'card' | 'list'
+export type ViewMode = 'card' | 'feed'
+
+export const VIDEO_FILE_EXTENSIONS = ['.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v', '.3gp'] as const
+
+export function hasVideoFileExtension(name: string): boolean {
+  const lowerName = name.toLowerCase()
+  return VIDEO_FILE_EXTENSIONS.some((extension) => lowerName.endsWith(extension))
+}
+
+export function isVideoMimeType(mimeType: string): boolean {
+  return mimeType.startsWith('video/')
+}
 
 export interface StoredFile {
   path: string
@@ -23,6 +34,10 @@ export interface Product {
 
 export interface BackupFile extends StoredFile {
   data: string
+}
+
+export function isVideoStoredFile(file: StoredFile): boolean {
+  return isVideoMimeType(file.mimeType) || hasVideoFileExtension(file.name)
 }
 
 export interface ProductBackup extends Omit<Product, 'image' | 'attachments'> {
