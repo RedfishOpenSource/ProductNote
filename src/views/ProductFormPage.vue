@@ -5,7 +5,10 @@
         <button class="header-back-button" type="button" aria-label="返回上一页" @click="goBack">
           <el-icon><Back /></el-icon>
         </button>
-        <h1 class="page-title">{{ isEditMode ? '编辑商品' : '新增商品' }}</h1>
+        <div class="header-copy">
+          <h1 class="page-title">{{ isEditMode ? '编辑商品' : '新增商品' }}</h1>
+        </div>
+        <span class="header-side-spacer" aria-hidden="true" />
       </header>
     </div>
 
@@ -551,18 +554,23 @@ onMounted(async () => {
 }
 
 .page-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   margin-bottom: 0;
+}
+
+.header-back-button,
+.header-side-spacer {
+  width: 44px;
+  height: 44px;
 }
 
 .header-back-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
   border: 0;
   border-radius: 14px;
   background: #f4f6fb;
@@ -574,10 +582,17 @@ onMounted(async () => {
   font-size: 22px;
 }
 
+.header-copy {
+  min-width: 0;
+}
+
 .page-title {
-  flex: 1;
   margin: 0;
-  text-align: right;
+  text-align: left;
+}
+
+.header-side-spacer {
+  display: block;
 }
 
 .form-section {
