@@ -179,25 +179,25 @@
 
     <el-drawer
       v-model="settingsOpen"
-      class="settings-drawer"
+      :class="['settings-drawer', { 'is-dragging': drawerDragging }]"
+      :style="drawerStyle"
       direction="ltr"
       size="82%"
       :with-header="false"
       :close-on-click-modal="true"
       @closed="resetGesture"
-      @touchend="handleDrawerTouchEnd"
-      @touchmove.passive="handleDrawerTouchMove"
-      @touchstart.passive="handleDrawerTouchStart"
     >
       <div
         class="settings-drawer-body"
+        @touchcancel="handleDrawerTouchEnd"
         @touchend="handleDrawerTouchEnd"
-        @touchmove.passive="handleDrawerTouchMove"
-        @touchstart.passive="handleDrawerTouchStart"
+        @touchmove="handleDrawerTouchMove"
+        @touchstart="handleDrawerTouchStart"
       >
         <div class="settings-header panel-card">
+          <span class="settings-swipe-handle" aria-hidden="true" />
           <h2 class="settings-title">设置</h2>
-          <p class="settings-description">点击空白区域或在面板内向左滑动，可关闭设置抽屉。</p>
+          <p class="settings-description">点击空白区域，或在面板里向左滑动后松手，即可关闭设置抽屉。</p>
         </div>
 
         <section class="panel-card settings-section">
@@ -261,6 +261,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { exportProducts, importProducts } from '../services/backup-service'
 import { deleteStoredFile, readImportFile, resolveFileUrl, saveFile, savePhotoBlob } from '../services/file-service'
+import { formatPrice } from '../services/product-format'
 import {
   clearSearchHistory,
   getListViewMode,
@@ -279,8 +280,7 @@ import { isVideoStoredFile } from '../types/product'
 import type { Product, StoredFile, ViewMode } from '../types/product'
 import type { VisualSearchResult } from '../types/visual-search'
 
-type GestureArea = 'page' | 'drawer'
-type SwipeDirection = 'left' | 'right'
+type SwipeAxis = 'x' | 'y'
 
 type SearchInputHandle = {
   focus: () => void
@@ -302,14 +302,27 @@ const photoSearchSummary = ref('')
 const preparingVisualIndex = ref(false)
 const searchingByPhoto = ref(false)
 const settingsOpen = ref(false)
-const gestureStartX = ref(0)
-const gestureStartY = ref(0)
-const gestureTracking = ref<GestureArea | null>(null)
-const gestureHandled = ref(false)
+const pageGestureStartX = ref(0)
+const pageGestureStartY = ref(0)
+const pageGestureAxis = ref<SwipeAxis | null>(null)
+const pageGestureActive = ref(false)
+const drawerGestureStartX = ref(0)
+const drawerGestureStartY = ref(0)
+const drawerGestureAxis = ref<SwipeAxis | null>(null)
+const drawerDragging = ref(false)
+const drawerDragOffsetX = ref(0)
+const drawerPanelWidth = ref(0)
 const isWebPlatform = Capacitor.getPlatform() === 'web'
 
 const drawerSwipeEdge = 24
 const drawerSwipeThreshold = 40
+const drawerDragStartThreshold = 8
+const drawerCloseThreshold = 72
+
+const drawerStyle = computed(() => ({
+  '--settings-drawer-offset': `${drawerDragOffsetX.value}px`,
+  '--settings-drawer-transition': drawerDragging.value ? 'none' : 'transform 180ms ease-out',
+}))
 
 const hasActiveFilters = computed(() => Boolean(searchText.value.trim() || photoSearchResults.value))
 const showSearchHistoryPanel = computed(() => searchOpen.value && !hasActiveFilters.value)
@@ -358,11 +371,6 @@ function showToast(message: string, color: 'success' | 'warning' | 'danger' = 's
 
 function productHasVideo(product: Product): boolean {
   return product.attachments.some((file) => isVideoStoredFile(file))
-}
-
-function formatPrice(price: number | null) {
-  if (price === null || Number.isNaN(price)) return '未填写价格'
-  return `¥ ${price.toFixed(2)}`
 }
 
 async function refreshImages() {
@@ -481,12 +489,25 @@ async function clearStoredSearchHistory() {
   searchHistory.value = []
 }
 
+function resetPageGesture(): void {
+  pageGestureActive.value = false
+  pageGestureAxis.value = null
+}
+
+function resetDrawerGesture(): void {
+  drawerGestureAxis.value = null
+  drawerDragging.value = false
+  drawerDragOffsetX.value = 0
+  drawerPanelWidth.value = 0
+}
+
 function resetGesture(): void {
-  gestureTracking.value = null
-  gestureHandled.value = false
+  resetPageGesture()
+  resetDrawerGesture()
 }
 
 function openSettings(): void {
+  resetDrawerGesture()
   settingsOpen.value = true
 }
 
@@ -494,40 +515,17 @@ function closeSettings(): void {
   settingsOpen.value = false
 }
 
-function startGesture(area: GestureArea, touch: Touch): void {
-  gestureStartX.value = touch.clientX
-  gestureStartY.value = touch.clientY
-  gestureTracking.value = area
-  gestureHandled.value = false
-}
-
-function hasPassedSwipeThreshold(deltaX: number, direction: SwipeDirection): boolean {
-  if (direction === 'right') {
-    return deltaX > drawerSwipeThreshold
-  }
-
-  return deltaX < -drawerSwipeThreshold
-}
-
-function shouldHandleHorizontalSwipe(
-  event: TouchEvent,
-  area: GestureArea,
-  direction: SwipeDirection,
-): Touch | null {
-  if (gestureTracking.value !== area || gestureHandled.value || event.touches.length !== 1) {
+function lockGestureAxis(deltaX: number, deltaY: number): SwipeAxis | null {
+  if (Math.abs(deltaX) < drawerDragStartThreshold && Math.abs(deltaY) < drawerDragStartThreshold) {
     return null
   }
 
-  const touch = event.touches[0]
-  const deltaX = touch.clientX - gestureStartX.value
-  const deltaY = touch.clientY - gestureStartY.value
-  const isHorizontalSwipe = Math.abs(deltaX) > Math.abs(deltaY)
+  return Math.abs(deltaX) > Math.abs(deltaY) ? 'x' : 'y'
+}
 
-  if (!isHorizontalSwipe || !hasPassedSwipeThreshold(deltaX, direction)) {
-    return null
-  }
-
-  return touch
+function resolveDrawerPanelWidth(event: TouchEvent): number {
+  const currentTarget = event.currentTarget
+  return currentTarget instanceof HTMLElement ? currentTarget.clientWidth : 0
 }
 
 function openImportPicker(): void {
@@ -540,56 +538,113 @@ function openPhotoSearchPicker(): void {
 
 function handlePageTouchStart(event: TouchEvent): void {
   if (settingsOpen.value || event.touches.length !== 1) {
-    resetGesture()
+    resetPageGesture()
     return
   }
 
   const touch = event.touches[0]
   if (touch.clientX > drawerSwipeEdge) {
-    resetGesture()
+    resetPageGesture()
     return
   }
 
-  startGesture('page', touch)
+  pageGestureStartX.value = touch.clientX
+  pageGestureStartY.value = touch.clientY
+  pageGestureAxis.value = null
+  pageGestureActive.value = true
 }
 
 function handlePageTouchMove(event: TouchEvent): void {
-  if (!shouldHandleHorizontalSwipe(event, 'page', 'right')) {
+  if (!pageGestureActive.value || event.touches.length !== 1) {
     return
   }
 
-  openSettings()
-  gestureHandled.value = true
+  const touch = event.touches[0]
+  const deltaX = touch.clientX - pageGestureStartX.value
+  const deltaY = touch.clientY - pageGestureStartY.value
+
+  if (!pageGestureAxis.value) {
+    pageGestureAxis.value = lockGestureAxis(deltaX, deltaY)
+  }
+
+  if (pageGestureAxis.value !== 'x' || deltaX <= 0) {
+    return
+  }
+
+  if (deltaX > drawerSwipeThreshold) {
+    openSettings()
+    resetPageGesture()
+  }
 }
 
 function handlePageTouchEnd(): void {
-  if (gestureTracking.value === 'page') {
-    resetGesture()
-  }
+  resetPageGesture()
 }
 
 function handleDrawerTouchStart(event: TouchEvent): void {
   if (!settingsOpen.value || event.touches.length !== 1) {
-    resetGesture()
+    resetDrawerGesture()
     return
   }
 
-  startGesture('drawer', event.touches[0])
+  const touch = event.touches[0]
+  drawerGestureStartX.value = touch.clientX
+  drawerGestureStartY.value = touch.clientY
+  drawerGestureAxis.value = null
+  drawerDragging.value = false
+  drawerPanelWidth.value = resolveDrawerPanelWidth(event)
 }
 
 function handleDrawerTouchMove(event: TouchEvent): void {
-  if (!shouldHandleHorizontalSwipe(event, 'drawer', 'left')) {
+  if (!settingsOpen.value || event.touches.length !== 1) {
     return
   }
 
-  closeSettings()
-  gestureHandled.value = true
+  const touch = event.touches[0]
+  const deltaX = touch.clientX - drawerGestureStartX.value
+  const deltaY = touch.clientY - drawerGestureStartY.value
+
+  if (!drawerGestureAxis.value) {
+    drawerGestureAxis.value = lockGestureAxis(deltaX, deltaY)
+  }
+
+  if (drawerGestureAxis.value !== 'x') {
+    return
+  }
+
+  if (deltaX >= 0) {
+    drawerDragging.value = false
+    drawerDragOffsetX.value = 0
+    return
+  }
+
+  event.preventDefault()
+  drawerDragging.value = true
+  drawerDragOffsetX.value = Math.max(deltaX, -(drawerPanelWidth.value || Number.MAX_SAFE_INTEGER))
 }
 
 function handleDrawerTouchEnd(): void {
-  if (gestureTracking.value === 'drawer') {
-    resetGesture()
+  if (!drawerGestureAxis.value) {
+    resetDrawerGesture()
+    return
   }
+
+  if (drawerGestureAxis.value !== 'x' || !drawerDragging.value) {
+    resetDrawerGesture()
+    return
+  }
+
+  const draggedDistance = Math.abs(drawerDragOffsetX.value)
+  const widthThreshold = drawerPanelWidth.value > 0 ? drawerPanelWidth.value * 0.25 : 0
+  const shouldClose = draggedDistance >= Math.max(drawerCloseThreshold, widthThreshold)
+
+  if (!shouldClose) {
+    resetDrawerGesture()
+    return
+  }
+
+  drawerDragging.value = false
+  closeSettings()
 }
 
 async function handleExport(): Promise<void> {
@@ -1194,15 +1249,43 @@ onMounted(async () => {
   max-width: 420px;
 }
 
+:deep(.settings-drawer .el-drawer) {
+  transform: translate3d(var(--settings-drawer-offset, 0px), 0, 0);
+  transition: var(--settings-drawer-transition, transform 180ms ease-out);
+  will-change: transform;
+}
+
 :deep(.settings-drawer .el-drawer__body) {
   padding: 16px;
   background: var(--app-bg);
+}
+
+:deep(.settings-drawer.is-dragging .el-drawer__body) {
+  overflow: hidden;
+}
+
+:deep(.settings-drawer.is-dragging .settings-section) {
+  pointer-events: none;
 }
 
 .settings-drawer-body {
   min-height: 100%;
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
   touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+
+.settings-header {
+  touch-action: pan-y;
+}
+
+.settings-swipe-handle {
+  display: block;
+  width: 44px;
+  height: 5px;
+  margin: 0 auto 12px;
+  border-radius: 999px;
+  background: rgba(17, 19, 24, 0.16);
 }
 
 .floating-add-button {
