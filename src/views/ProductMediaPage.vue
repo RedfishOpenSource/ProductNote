@@ -35,13 +35,9 @@
         @touchmove="handlePreviewTouchMove"
         @touchstart="handlePreviewTouchStart"
       >
-        <span class="video-detail-preview-tag">商品详情</span>
-        <div class="video-detail-copy">
-          <div class="video-detail-heading">
-            <strong>{{ product.name }}</strong>
-            <span class="video-detail-price">{{ formatPrice(product.price) }}</span>
-          </div>
-          <p>{{ detailPreviewText }}</p>
+        <div class="video-detail-heading">
+          <strong>{{ product.name }}</strong>
+          <span class="video-detail-price">{{ formatPrice(product.price) }}</span>
         </div>
         <div class="video-detail-footer">
           <span class="video-detail-supplier">{{ product.supplierName || '未填写供应商' }}</span>
@@ -171,7 +167,6 @@ const detailSheetMaxDragOffset = 420
 
 const productId = computed(() => String(route.params.id ?? ''))
 const showVideoPlayer = computed(() => activeMediaType.value === 'video' && Boolean(activeMediaUrl.value) && Boolean(product.value))
-const detailPreviewText = computed(() => product.value?.description?.trim() || '点击展开，查看商品详情、供应商信息和附件情况。')
 const detailSheetStyle = computed(() => ({
   '--detail-sheet-offset': `${detailSheetOpen.value ? detailSheetDragOffsetY.value : 100}%`,
   '--detail-sheet-transition': detailSheetDragging.value ? 'none' : 'transform 220ms ease-out',
@@ -323,16 +318,11 @@ function resolvePrimaryMedia(currentProduct: Product): StoredFile | null {
     return firstVideo
   }
 
-  if (currentProduct.image) {
-    activeMediaType.value = 'image'
-    return currentProduct.image
-  }
-
   activeMediaType.value = 'image'
-  return null
+  return currentProduct.image ?? null
 }
 
-async function loadProduct() {
+async function loadProduct(): Promise<void> {
   loading.value = true
   closeDetailSheet()
 
@@ -439,94 +429,84 @@ onMounted(async () => {
 
 .video-detail-preview {
   position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  left: 12px;
+  right: 12px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
   z-index: 2;
   display: grid;
-  gap: 12px;
+  gap: 6px;
   width: auto;
-  padding: 16px 16px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 26px;
-  background: linear-gradient(180deg, rgba(15, 18, 24, 0.18) 0%, rgba(15, 18, 24, 0.62) 42%, rgba(15, 18, 24, 0.88) 100%);
-  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.24);
-  backdrop-filter: blur(18px);
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 20px;
+  background: rgba(15, 18, 24, 0.1);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
+  backdrop-filter: blur(4px);
   color: #ffffff;
   text-align: left;
 }
 
-.video-detail-preview-tag {
-  display: inline-flex;
-  width: fit-content;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-}
-
-.video-detail-copy {
-  display: grid;
-  gap: 10px;
-}
-
 .video-detail-heading {
-  display: grid;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 8px;
+  min-width: 0;
 }
 
-.video-detail-copy strong {
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1.25;
+.video-detail-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #ffffff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
 }
 
 .video-detail-price {
+  flex-shrink: 0;
   color: rgba(255, 255, 255, 0.92);
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 600;
-}
-
-.video-detail-copy p {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.65;
-  color: rgba(255, 255, 255, 0.84);
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
+  line-height: 1.2;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
 }
 
 .video-detail-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 
 .video-detail-supplier {
   min-width: 0;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 13px;
   overflow: hidden;
+  color: rgba(255, 255, 255, 0.82);
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.2;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
 }
 
 .video-detail-action {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: 6px;
-  color: #ffffff;
-  font-size: 13px;
+  gap: 4px;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 11px;
+  line-height: 1.2;
   white-space: nowrap;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
 }
 
 .video-detail-action .el-icon {
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .detail-sheet-backdrop {
@@ -735,14 +715,20 @@ onMounted(async () => {
 
 @media (max-width: 640px) {
   .video-detail-preview {
-    left: 12px;
-    right: 12px;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
-    padding: 14px 14px 12px;
+    left: 10px;
+    right: 10px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+    padding: 9px 10px;
   }
 
-  .video-detail-copy strong {
-    font-size: 20px;
+  .video-detail-heading strong {
+    font-size: 14px;
+  }
+
+  .video-detail-price,
+  .video-detail-supplier,
+  .video-detail-action {
+    font-size: 10px;
   }
 
   .detail-sheet {

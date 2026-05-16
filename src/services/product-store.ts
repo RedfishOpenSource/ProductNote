@@ -25,6 +25,7 @@ function mapRowToProduct(row: Record<string, unknown>) {
     supplierPhone: String(row.supplier_phone ?? ''),
     image: row.image_json ? JSON.parse(String(row.image_json)) : null,
     attachments: row.attachments_json ? JSON.parse(String(row.attachments_json)) : [],
+    model3d: row.model_3d_json ? JSON.parse(String(row.model_3d_json)) : null,
     createdAt: String(row.created_at ?? ''),
     updatedAt: String(row.updated_at ?? ''),
   } satisfies Product
@@ -65,6 +66,7 @@ async function ensureDatabase() {
       supplier_phone TEXT NOT NULL,
       image_json TEXT,
       attachments_json TEXT NOT NULL,
+      model_3d_json TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -79,7 +81,21 @@ async function ensureDatabase() {
     );
   `)
 
+  try {
+    await database.execute('ALTER TABLE products ADD COLUMN model_3d_json TEXT')
+  } catch {
+    // Column already exists on upgraded installs.
+  }
+
   return database
+}
+
+function normalizeProduct(product: Product): Product {
+  return {
+    ...product,
+    attachments: product.attachments ?? [],
+    model3d: product.model3d ?? null,
+  }
 }
 
 async function loadWebProducts() {
@@ -88,7 +104,7 @@ async function loadWebProducts() {
 
   try {
     const parsed = JSON.parse(result.value) as Product[]
-    return parsed.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    return parsed.map((product) => normalizeProduct(product)).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
   } catch {
     return [] as Product[]
   }
@@ -140,8 +156,8 @@ export async function saveProduct(product: Product) {
   await db!.run(
     `INSERT OR REPLACE INTO products (
       id, name, price, description, supplier_name, supplier_phone,
-      image_json, attachments_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      image_json, attachments_json, model_3d_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       product.id,
       product.name,
@@ -151,6 +167,7 @@ export async function saveProduct(product: Product) {
       product.supplierPhone,
       product.image ? JSON.stringify(product.image) : null,
       JSON.stringify(product.attachments),
+      product.model3d ? JSON.stringify(product.model3d) : null,
       product.createdAt,
       product.updatedAt,
     ],

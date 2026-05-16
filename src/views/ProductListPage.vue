@@ -140,6 +140,9 @@
                   <el-tag v-if="productHasVideo(product)" class="meta-tag" effect="plain" round type="danger">
                     <span>含视频</span>
                   </el-tag>
+                  <el-tag v-if="product.model3d" class="meta-tag" effect="plain" round type="success">
+                    <span>3D</span>
+                  </el-tag>
                 </div>
               </div>
             </div>
@@ -165,6 +168,7 @@
                 <el-icon><VideoCamera /></el-icon>
                 视频
               </span>
+              <span v-if="product.model3d" class="feed-model-badge">3D</span>
             </div>
 
             <div class="feed-body">
@@ -219,6 +223,44 @@
       </div>
     </el-drawer>
 
+    <el-drawer v-model="createEntryOpen" class="create-entry-drawer" direction="btt" size="auto" :with-header="false">
+      <div class="create-entry-body">
+        <span class="settings-swipe-handle" aria-hidden="true" />
+        <div class="create-entry-head">
+          <h2>新增商品</h2>
+          <p>可先带图进入表单，也可点按拍照、长按拍视频，或直接语音预填。</p>
+        </div>
+
+        <div class="create-entry-grid">
+          <button class="create-entry-card" type="button" @click="openCreateAlbumPicker">
+            <strong>从相册选择</strong>
+            <span>选一张商品图片后继续编辑</span>
+          </button>
+          <button
+            class="create-entry-card"
+            type="button"
+            :disabled="createEntryBusy"
+            @pointercancel="handleCreateCameraPressCancel"
+            @pointerdown="handleCreateCameraPressStart"
+            @pointerleave="handleCreateCameraPressCancel"
+            @pointerup="handleCreateCameraPressEnd"
+            @click="handleCreateCameraClick"
+          >
+            <strong>相机</strong>
+            <span>点按拍照，长按拍视频</span>
+          </button>
+          <button class="create-entry-card" type="button" @click="startTextCreate">
+            <strong>写文字</strong>
+            <span>直接打开空白表单</span>
+          </button>
+          <button class="create-entry-card" type="button" :disabled="createEntryBusy" @click="startAiCreate">
+            <strong>{{ createEntryBusy ? '识别中...' : 'AI 录入' }}</strong>
+            <span>离线语音转文字并预填字段</span>
+          </button>
+        </div>
+      </div>
+    </el-drawer>
+
     <input
       ref="importInput"
       accept=".json,application/json"
@@ -233,8 +275,31 @@
       type="file"
       @change="handlePhotoSearchFileSelected"
     />
+    <input
+      ref="createAlbumInput"
+      accept="image/*"
+      class="hidden-input"
+      type="file"
+      @change="handleCreateAlbumSelected"
+    />
+    <input
+      ref="createPhotoCaptureInput"
+      accept="image/*"
+      capture="environment"
+      class="hidden-input"
+      type="file"
+      @change="handleCreatePhotoCaptured"
+    />
+    <input
+      ref="createVideoCaptureInput"
+      accept="video/*"
+      capture="environment"
+      class="hidden-input"
+      type="file"
+      @change="handleCreateVideoCaptured"
+    />
 
-    <button class="floating-add-button" type="button" @click="goCreate">
+    <button class="floating-add-button" type="button" @click="openCreateEntry">
       <el-icon><Plus /></el-icon>
     </button>
   </div>
@@ -261,6 +326,10 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { exportProducts, importProducts } from '../services/backup-service'
 import { deleteStoredFile, readImportFile, resolveFileUrl, saveFile, savePhotoBlob } from '../services/file-service'
+import { buildDraftFromSpeechText } from '../services/local-ai-entry-service'
+import { startOfflineSpeechRecognition, isOfflineSpeechSupported } from '../services/offline-speech-service'
+import { clearPendingProductCreateDraft, setPendingProductCreateDraft } from '../services/product-create-draft'
+import type { ProductCreateDraft } from '../services/product-create-draft'
 import { formatPrice } from '../services/product-format'
 import {
   clearSearchHistory,
@@ -296,12 +365,19 @@ const searchHistory = ref<string[]>([])
 const imageMap = ref<Record<string, string>>({})
 const importInput = ref<HTMLInputElement | null>(null)
 const photoSearchInput = ref<HTMLInputElement | null>(null)
+const createAlbumInput = ref<HTMLInputElement | null>(null)
+const createPhotoCaptureInput = ref<HTMLInputElement | null>(null)
+const createVideoCaptureInput = ref<HTMLInputElement | null>(null)
 const searchInput = ref<SearchInputHandle | null>(null)
 const photoSearchResults = ref<VisualSearchResult[] | null>(null)
 const photoSearchSummary = ref('')
 const preparingVisualIndex = ref(false)
 const searchingByPhoto = ref(false)
 const settingsOpen = ref(false)
+const createEntryOpen = ref(false)
+const createEntryBusy = ref(false)
+const createCameraLongPressTimer = ref<number | null>(null)
+const createCameraLongPressTriggered = ref(false)
 const pageGestureStartX = ref(0)
 const pageGestureStartY = ref(0)
 const pageGestureAxis = ref<SwipeAxis | null>(null)
@@ -417,8 +493,213 @@ async function loadUiState() {
   searchHistory.value = storedSearchHistory
 }
 
-function goCreate() {
+function clearCreateCameraTimer(): void {
+  if (createCameraLongPressTimer.value !== null) {
+    window.clearTimeout(createCameraLongPressTimer.value)
+    createCameraLongPressTimer.value = null
+  }
+}
+
+function closeCreateEntry(): void {
+  clearCreateCameraTimer()
+  createCameraLongPressTriggered.value = false
+  createEntryOpen.value = false
+}
+
+function openCreateEntry(): void {
+  closeSettings()
+  createEntryOpen.value = true
+}
+
+function startCreateWithDraft(draft: ProductCreateDraft | null = null): void {
+  if (draft) {
+    setPendingProductCreateDraft(draft)
+  } else {
+    clearPendingProductCreateDraft()
+  }
+
+  closeCreateEntry()
   router.push('/product/new')
+}
+
+function openFileInput(input: HTMLInputElement | null): void {
+  input?.click()
+}
+
+function openCreateAlbumPicker(): void {
+  openFileInput(createAlbumInput.value)
+}
+
+function openCreatePhotoCapture(): void {
+  openFileInput(createPhotoCaptureInput.value)
+}
+
+function openCreateVideoCapture(): void {
+  openFileInput(createVideoCaptureInput.value)
+}
+
+function handleCreateCameraPressStart(): void {
+  if (createEntryBusy.value) return
+
+  clearCreateCameraTimer()
+  createCameraLongPressTriggered.value = false
+  createCameraLongPressTimer.value = window.setTimeout(() => {
+    createCameraLongPressTriggered.value = true
+    openCreateVideoCapture()
+  }, 420)
+}
+
+function handleCreateCameraPressEnd(): void {
+  clearCreateCameraTimer()
+}
+
+function handleCreateCameraPressCancel(): void {
+  clearCreateCameraTimer()
+}
+
+function handleCreateCameraClick(): void {
+  if (createEntryBusy.value) return
+
+  if (createCameraLongPressTriggered.value) {
+    createCameraLongPressTriggered.value = false
+    return
+  }
+
+  openCreatePhotoCapture()
+}
+
+async function createVideoCoverBlob(file: File): Promise<Blob> {
+  const sourceUrl = URL.createObjectURL(file)
+
+  try {
+    const video = document.createElement('video')
+    video.preload = 'auto'
+    video.muted = true
+    video.playsInline = true
+
+    await new Promise<void>((resolve, reject) => {
+      const handleLoaded = () => {
+        cleanup()
+        resolve()
+      }
+      const handleError = () => {
+        cleanup()
+        reject(new Error('无法读取视频内容'))
+      }
+      const cleanup = () => {
+        video.removeEventListener('loadeddata', handleLoaded)
+        video.removeEventListener('error', handleError)
+      }
+
+      video.addEventListener('loadeddata', handleLoaded)
+      video.addEventListener('error', handleError)
+      video.src = sourceUrl
+      video.load()
+    })
+
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, video.videoWidth)
+    canvas.height = Math.max(1, video.videoHeight)
+    const context = canvas.getContext('2d')
+
+    if (!context) {
+      throw new Error('当前设备不支持生成视频封面')
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob)
+          return
+        }
+
+        reject(new Error('无法生成视频封面'))
+      }, 'image/jpeg', 0.92)
+    })
+  } finally {
+    URL.revokeObjectURL(sourceUrl)
+  }
+}
+
+async function startCreateFromImageFile(file: File, failureMessage: string): Promise<void> {
+  try {
+    const image = await saveFile(file, 'image')
+    startCreateWithDraft({ image })
+  } catch (error) {
+    console.error(error)
+    showToast(failureMessage, 'danger')
+  }
+}
+
+async function handleCreateAlbumSelected(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+
+  if (!file) return
+
+  await startCreateFromImageFile(file, '带图新建失败，请稍后重试')
+}
+
+async function handleCreatePhotoCaptured(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+
+  if (!file) return
+
+  await startCreateFromImageFile(file, '拍照新建失败，请稍后重试')
+}
+
+async function handleCreateVideoCaptured(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  createCameraLongPressTriggered.value = false
+
+  if (!file) return
+
+  createEntryBusy.value = true
+
+  try {
+    const [coverBlob, videoAttachment] = await Promise.all([createVideoCoverBlob(file), saveFile(file, 'attachment')])
+    const image = await savePhotoBlob(coverBlob, 'image/jpeg')
+    startCreateWithDraft({
+      image,
+      attachments: [videoAttachment],
+    })
+  } catch (error) {
+    console.error(error)
+    showToast('拍视频新建失败，请稍后重试', 'danger')
+  } finally {
+    createEntryBusy.value = false
+  }
+}
+
+function startTextCreate(): void {
+  startCreateWithDraft(null)
+}
+
+async function startAiCreate(): Promise<void> {
+  if (!isOfflineSpeechSupported()) {
+    showToast('当前环境暂不支持离线语音录入', 'warning')
+    return
+  }
+
+  createEntryBusy.value = true
+
+  try {
+    const result = await startOfflineSpeechRecognition('请说出商品名称、价格、描述和供应商信息')
+    startCreateWithDraft(buildDraftFromSpeechText(result.text))
+    showToast('已根据语音内容预填表单')
+  } catch (error) {
+    console.error(error)
+    showToast(error instanceof Error ? error.message : 'AI 录入失败，请稍后重试', 'warning')
+  } finally {
+    createEntryBusy.value = false
+  }
 }
 
 function goEdit(id: string) {
@@ -435,7 +716,7 @@ function handleEmptyAction() {
     return
   }
 
-  goCreate()
+  openCreateEntry()
 }
 
 function clearPhotoSearch(): void {
@@ -507,6 +788,7 @@ function resetGesture(): void {
 }
 
 function openSettings(): void {
+  closeCreateEntry()
   resetDrawerGesture()
   settingsOpen.value = true
 }
@@ -778,50 +1060,50 @@ onMounted(async () => {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   height: 100vh;
   height: 100dvh;
   min-height: 100vh;
   min-height: 100dvh;
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
   overflow: hidden;
 }
 
 .page-top-shell {
   flex-shrink: 0;
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .top-icon-bar,
 .search-mode-bar {
   display: grid;
   align-items: center;
-  gap: 10px;
-  padding: 12px;
+  gap: 8px;
+  padding: 10px;
 }
 
 .top-icon-bar {
-  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
 }
 
 .search-mode-shell {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .search-mode-bar {
-  grid-template-columns: 44px minmax(0, 1fr) 44px auto;
+  grid-template-columns: 40px minmax(0, 1fr) 40px auto;
 }
 
 .icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border: 0;
-  border-radius: 14px;
+  border-radius: 12px;
   background: #f4f6fb;
   color: var(--app-title);
   cursor: pointer;
@@ -829,17 +1111,17 @@ onMounted(async () => {
 
 .icon-button .el-icon,
 .view-icon-button .el-icon {
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .hamburger-button {
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .hamburger-button span {
   display: block;
-  width: 16px;
+  width: 14px;
   height: 1.5px;
   border-radius: 999px;
   background: currentColor;
@@ -848,9 +1130,9 @@ onMounted(async () => {
 .view-mode-strip {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  padding: 4px;
-  border-radius: 18px;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 16px;
   background: #f4f6fb;
 }
 
@@ -858,9 +1140,9 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
+  min-height: 34px;
   border: 0;
-  border-radius: 14px;
+  border-radius: 12px;
   background: transparent;
   color: var(--app-text-secondary);
   cursor: pointer;
@@ -869,26 +1151,26 @@ onMounted(async () => {
 .view-icon-button.active {
   background: #ffffff;
   color: var(--app-primary);
-  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.18);
+  box-shadow: 0 4px 10px rgba(64, 158, 255, 0.16);
 }
 
 :deep(.search-mode-box .el-input__wrapper) {
-  border-radius: 18px;
+  border-radius: 16px;
   background: #f4f6fb;
   box-shadow: none;
-  padding: 8px 14px;
+  padding: 6px 12px;
 }
 
 .photo-search-inline-button {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
 }
 
 .search-submit-button {
   border: 0;
   background: transparent;
   color: var(--app-primary);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -905,10 +1187,10 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   margin: 0 2px;
   color: var(--app-text-secondary);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .summary-action {
@@ -918,14 +1200,14 @@ onMounted(async () => {
   border: 0;
   background: transparent;
   color: var(--app-primary);
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
 }
 
 .photo-search-hint {
-  padding: 12px 16px;
+  padding: 10px 14px;
   color: var(--app-primary-dark);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .history-panel {
@@ -1020,12 +1302,13 @@ onMounted(async () => {
 
 .card-grid {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .product-card {
   width: 100%;
   border: 0;
+  padding: 12px;
   text-align: left;
   background: #ffffff;
   cursor: pointer;
@@ -1033,14 +1316,14 @@ onMounted(async () => {
 
 .product-card-top {
   display: grid;
-  grid-template-columns: 88px 1fr;
-  gap: 14px;
+  grid-template-columns: 72px 1fr;
+  gap: 10px;
 }
 
 .product-image {
-  width: 88px;
-  height: 88px;
-  border-radius: 16px;
+  width: 72px;
+  height: 72px;
+  border-radius: 14px;
   object-fit: cover;
   background: #f5f7fa;
 }
@@ -1060,19 +1343,19 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
+  gap: 8px;
 }
 
 .headline-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .product-headline h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
   color: var(--app-title);
 }
 
@@ -1080,36 +1363,47 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 8px;
+  padding: 1px 7px;
   border-radius: 999px;
   background: rgba(64, 158, 255, 0.14);
   color: var(--app-primary-dark);
-  font-size: 12px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
 .price-text {
   color: var(--app-danger);
-  font-size: 18px;
+  font-size: 16px;
   white-space: nowrap;
 }
 
 .description-line {
-  margin: 8px 0 10px;
+  margin: 4px 0 8px;
   color: var(--app-text-secondary);
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 .chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
+}
+
+.meta-tag {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
 }
 
 .meta-tag :deep(.el-tag__content) {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 
@@ -1147,7 +1441,8 @@ onMounted(async () => {
 }
 
 .feed-match-badge,
-.feed-video-badge {
+.feed-video-badge,
+.feed-model-badge {
   position: absolute;
   top: 10px;
 }
@@ -1166,6 +1461,18 @@ onMounted(async () => {
   background: rgba(31, 45, 61, 0.62);
   color: #ffffff;
   font-size: 12px;
+}
+
+.feed-model-badge {
+  top: auto;
+  left: 10px;
+  bottom: 10px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(28, 130, 98, 0.84);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .feed-body {
@@ -1198,6 +1505,7 @@ onMounted(async () => {
 
 .settings-header {
   margin-bottom: 12px;
+  touch-action: pan-y;
 }
 
 .settings-title {
@@ -1241,6 +1549,68 @@ onMounted(async () => {
   margin-left: 0;
 }
 
+:deep(.create-entry-drawer .el-drawer) {
+  border-radius: 24px 24px 0 0;
+}
+
+:deep(.create-entry-drawer .el-drawer__body) {
+  padding: 16px;
+  background: var(--app-bg);
+}
+
+.create-entry-body {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+}
+
+.create-entry-head h2 {
+  margin: 0;
+  color: var(--app-title);
+  font-size: 20px;
+}
+
+.create-entry-head p {
+  margin: 8px 0 0;
+  color: var(--app-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.create-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.create-entry-card {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-height: 92px;
+  border: 1px solid var(--app-border);
+  border-radius: 16px;
+  padding: 14px;
+  background: #ffffff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.create-entry-card:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.create-entry-card strong {
+  color: var(--app-title);
+  font-size: 15px;
+}
+
+.create-entry-card span {
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .hidden-input {
   display: none;
 }
@@ -1275,9 +1645,6 @@ onMounted(async () => {
   overscroll-behavior: contain;
 }
 
-.settings-header {
-  touch-action: pan-y;
-}
 
 .settings-swipe-handle {
   display: block;
@@ -1309,7 +1676,25 @@ onMounted(async () => {
 
 @media (max-width: 640px) {
   .search-mode-bar {
-    grid-template-columns: 40px minmax(0, 1fr) 40px auto;
+    grid-template-columns: 36px minmax(0, 1fr) 36px auto;
+  }
+
+  .create-entry-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .product-card {
+    padding: 10px;
+  }
+
+  .product-card-top {
+    grid-template-columns: 68px 1fr;
+    gap: 8px;
+  }
+
+  .product-image {
+    width: 68px;
+    height: 68px;
   }
 
   .history-chip-list {

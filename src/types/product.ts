@@ -1,14 +1,25 @@
 export type ViewMode = 'card' | 'feed'
+export type ProductModelSourceType = 'photos' | 'video'
 
 export const VIDEO_FILE_EXTENSIONS = ['.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v', '.3gp'] as const
+export const MODEL_FILE_EXTENSIONS = ['.glb', '.gltf'] as const
 
 export function hasVideoFileExtension(name: string): boolean {
   const lowerName = name.toLowerCase()
   return VIDEO_FILE_EXTENSIONS.some((extension) => lowerName.endsWith(extension))
 }
 
+export function hasModelFileExtension(name: string): boolean {
+  const lowerName = name.toLowerCase()
+  return MODEL_FILE_EXTENSIONS.some((extension) => lowerName.endsWith(extension))
+}
+
 export function isVideoMimeType(mimeType: string): boolean {
   return mimeType.startsWith('video/')
+}
+
+export function isModelMimeType(mimeType: string): boolean {
+  return mimeType === 'model/gltf-binary' || mimeType === 'model/gltf+json'
 }
 
 export interface StoredFile {
@@ -16,7 +27,15 @@ export interface StoredFile {
   name: string
   mimeType: string
   size: number
-  kind: 'image' | 'attachment'
+  kind: 'image' | 'attachment' | 'model'
+}
+
+export interface ProductModel3D {
+  file: StoredFile
+  sourceType: ProductModelSourceType
+  generatedAt: string
+  engineId: string
+  sourceCount: number
 }
 
 export interface Product {
@@ -28,6 +47,7 @@ export interface Product {
   supplierPhone: string
   image: StoredFile | null
   attachments: StoredFile[]
+  model3d: ProductModel3D | null
   createdAt: string
   updatedAt: string
 }
@@ -36,17 +56,26 @@ export interface BackupFile extends StoredFile {
   data: string
 }
 
+export interface ProductModel3DBackup extends Omit<ProductModel3D, 'file'> {
+  file: BackupFile
+}
+
 export function isVideoStoredFile(file: StoredFile): boolean {
   return isVideoMimeType(file.mimeType) || hasVideoFileExtension(file.name)
 }
 
-export interface ProductBackup extends Omit<Product, 'image' | 'attachments'> {
+export function isModelStoredFile(file: StoredFile): boolean {
+  return file.kind === 'model' || isModelMimeType(file.mimeType) || hasModelFileExtension(file.name)
+}
+
+export interface ProductBackup extends Omit<Product, 'image' | 'attachments' | 'model3d'> {
   image: BackupFile | null
   attachments: BackupFile[]
+  model3d: ProductModel3DBackup | null
 }
 
 export interface BackupPayload {
-  version: 1
+  version: 2
   exportedAt: string
   products: ProductBackup[]
 }

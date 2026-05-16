@@ -1,7 +1,7 @@
 <template>
   <div class="page-shell form-page">
     <div class="form-top-shell">
-      <header class="page-header panel-card">
+      <header class="page-header panel-card compact-card">
         <button class="header-back-button" type="button" aria-label="返回上一页" @click="goBack">
           <el-icon><Back /></el-icon>
         </button>
@@ -15,147 +15,194 @@
     <div class="form-scroll-shell">
       <div class="form-scroll-area">
         <div class="form-content">
-        <section class="panel-card form-section">
-          <div class="section-heading">
-            <h2>基本信息</h2>
-            <p>先填写商品名称、价格和商品描述。</p>
-          </div>
+          <section class="panel-card form-section compact-card">
+            <div class="section-heading compact-heading">
+              <h2>基本信息</h2>
+              <p>先填写商品名称、价格和商品描述。</p>
+            </div>
 
-          <div class="field-grid">
-            <label class="field-block">
-              <span>商品名称</span>
-              <el-input v-model="form.name" class="field-input" placeholder="请输入商品名称" />
+            <div class="field-grid">
+              <label class="field-block">
+                <span>商品名称</span>
+                <el-input v-model="form.name" class="field-input" placeholder="请输入商品名称" />
+              </label>
+              <label class="field-block">
+                <span>价格</span>
+                <el-input v-model="form.priceText" class="field-input" inputmode="decimal" placeholder="请输入价格" />
+                <p v-if="priceError" class="field-error">{{ priceError }}</p>
+              </label>
+            </div>
+
+            <label class="field-block field-block-expanded">
+              <span>商品描述</span>
+              <el-input
+                v-model="form.description"
+                class="field-input"
+                type="textarea"
+                :rows="3"
+                placeholder="例如：颜色、规格、适用场景"
+              />
             </label>
-            <label class="field-block">
-              <span>价格</span>
-              <el-input v-model="form.priceText" class="field-input" inputmode="decimal" placeholder="请输入价格" />
-              <p v-if="priceError" class="field-error">{{ priceError }}</p>
-            </label>
-          </div>
+          </section>
 
-          <label class="field-block field-block-expanded">
-            <span>商品描述</span>
-            <el-input
-              v-model="form.description"
-              class="field-input"
-              type="textarea"
-              :rows="4"
-              placeholder="例如：颜色、规格、适用场景"
-            />
-          </label>
-        </section>
+          <section class="panel-card form-section compact-card">
+            <div class="section-heading compact-heading">
+              <h2>商品图片</h2>
+              <p>列表展示、新建入口带图和 3D 建模都优先用这里。</p>
+            </div>
 
-        <section class="panel-card form-section">
-          <div class="section-heading">
-            <h2>商品图片</h2>
-            <p>拍一张商品图，方便列表展示和图片搜索。</p>
-          </div>
-
-          <div v-if="imagePreview" class="preview-box">
-            <img :src="imagePreview" alt="商品图片" class="preview-image" />
-          </div>
-          <div v-else class="preview-empty">
-            <el-icon><Picture /></el-icon>
-            <span>还没有上传图片</span>
-          </div>
-
-          <div class="media-button-grid">
-            <el-button type="primary" @click="takePhoto">
-              <el-icon><Camera /></el-icon>
-              拍照上传
-            </el-button>
-            <el-button @click="pickImage">
+            <div v-if="imagePreview" class="preview-box compact-preview-box">
+              <img :src="imagePreview" alt="商品图片" class="preview-image" />
+            </div>
+            <div v-else class="preview-empty compact-preview-empty">
               <el-icon><Picture /></el-icon>
-              选择图片
-            </el-button>
-          </div>
-        </section>
-
-        <section class="panel-card form-section">
-          <div class="section-heading">
-            <h2>商品视频</h2>
-            <p>支持手机拍摄短视频，也可以从相册或文件中选择视频。</p>
-          </div>
-
-          <div v-if="videoAttachments.length === 0" class="preview-empty video-empty">
-            <el-icon><VideoCamera /></el-icon>
-            <span>还没有添加商品视频</span>
-          </div>
-          <div v-else class="file-list">
-            <div v-for="video in videoAttachments" :key="video.path" class="file-item">
-              <button class="file-main" type="button" @click="previewStoredFile(video)">
-                <div>
-                  <strong>{{ video.name }}</strong>
-                  <span>{{ video.mimeType || '视频文件' }}</span>
-                </div>
-              </button>
-              <el-button link type="danger" @click="removeStoredFile(video)">删除</el-button>
+              <span>还没有上传图片</span>
             </div>
-          </div>
 
-          <div class="media-button-grid media-button-grid-spaced">
-            <el-button type="primary" @click="captureVideo">
-              <el-icon><VideoCamera /></el-icon>
-              拍摄视频
-            </el-button>
-            <el-button @click="pickVideos">
-              <el-icon><VideoCamera /></el-icon>
-              选择视频
-            </el-button>
-          </div>
-
-          <p v-if="isWebPlatform" class="subtle-text section-note">网页端建议尽量使用较短的视频，视频过大时可能保存失败。</p>
-        </section>
-
-        <section class="panel-card form-section">
-          <div class="section-heading">
-            <h2>附件</h2>
-            <p>可保存票据、说明书等其他文件。</p>
-          </div>
-
-          <el-button @click="pickAttachments">
-            <el-icon><Paperclip /></el-icon>
-            选择附件
-          </el-button>
-
-          <div v-if="otherAttachments.length === 0" class="subtle-text">暂时没有其他附件</div>
-          <div v-else class="file-list">
-            <div v-for="attachment in otherAttachments" :key="attachment.path" class="file-item">
-              <button class="file-main" type="button" @click="previewStoredFile(attachment)">
-                <div>
-                  <strong>{{ attachment.name }}</strong>
-                  <span>{{ attachment.mimeType || '未知类型' }}</span>
-                </div>
-              </button>
-              <el-button link type="danger" @click="removeStoredFile(attachment)">删除</el-button>
+            <div class="media-button-grid compact-button-grid">
+              <el-button type="primary" @click="takePhoto">
+                <el-icon><Camera /></el-icon>
+                拍照上传
+              </el-button>
+              <el-button @click="pickImage">
+                <el-icon><Picture /></el-icon>
+                选择图片
+              </el-button>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section class="panel-card form-section">
-          <div class="section-heading">
-            <h2>供应商信息</h2>
-            <p>补充联系人信息，后面找货更方便。</p>
-          </div>
+          <section class="panel-card form-section compact-card">
+            <div class="section-heading compact-heading">
+              <h2>商品视频</h2>
+              <p>支持手机拍摄短视频，也可以从相册或文件中选择视频。</p>
+            </div>
 
-          <div class="field-grid">
-            <label class="field-block">
-              <span>供应商名称</span>
-              <el-input v-model="form.supplierName" class="field-input" placeholder="请输入供应商名称" />
-            </label>
-            <label class="field-block">
-              <span>供应商电话</span>
-              <el-input v-model="form.supplierPhone" class="field-input" inputmode="tel" placeholder="请输入供应商电话" />
-            </label>
-          </div>
-        </section>
+            <div v-if="videoAttachments.length === 0" class="preview-empty video-empty compact-preview-empty">
+              <el-icon><VideoCamera /></el-icon>
+              <span>还没有添加商品视频</span>
+            </div>
+            <div v-else class="file-list compact-file-list">
+              <div v-for="video in videoAttachments" :key="video.path" class="file-item compact-file-item">
+                <button class="file-main" type="button" @click="previewStoredFile(video)">
+                  <div>
+                    <strong>{{ video.name }}</strong>
+                    <span>{{ video.mimeType || '视频文件' }}</span>
+                  </div>
+                </button>
+                <el-button link type="danger" @click="removeStoredFile(video)">删除</el-button>
+              </div>
+            </div>
 
-        <section class="action-stack">
-          <el-button :loading="saving" size="large" type="primary" @click="saveCurrentProduct">
-            {{ saving ? '保存中...' : '保存商品' }}
-          </el-button>
-          <el-button v-if="isEditMode" size="large" type="danger" plain @click="deleteCurrentProduct">删除商品</el-button>
-        </section>
+            <div class="media-button-grid media-button-grid-spaced compact-button-grid">
+              <el-button type="primary" @click="captureVideo">
+                <el-icon><VideoCamera /></el-icon>
+                拍摄视频
+              </el-button>
+              <el-button @click="pickVideos">
+                <el-icon><VideoCamera /></el-icon>
+                选择视频
+              </el-button>
+            </div>
+
+            <p v-if="isWebPlatform" class="subtle-text section-note">网页端建议尽量使用较短的视频，视频过大时可能保存失败。</p>
+          </section>
+
+          <section class="panel-card form-section compact-card">
+            <div class="section-heading compact-heading">
+              <h2>3D 模型</h2>
+              <p>本地离线生成单个 GLB 模型，支持图片或短视频建模。</p>
+            </div>
+
+            <div v-if="modelPreviewUrl" class="model-preview-box">
+              <ProductModelViewer :src="modelPreviewUrl" />
+            </div>
+            <div v-else class="preview-empty compact-preview-empty model-empty">
+              <el-icon><Box /></el-icon>
+              <span>还没有生成 3D 模型</span>
+            </div>
+
+            <div v-if="form.model3d" class="model-meta-row">
+              <span>{{ form.model3d.file.name }}</span>
+              <span>{{ form.model3d.sourceType === 'video' ? '短视频建模' : '多图建模' }}</span>
+            </div>
+
+            <div class="source-summary">
+              <strong>当前建模来源：</strong>
+              <span>{{ modelSourceSummary }}</span>
+            </div>
+
+            <div class="media-button-grid compact-button-grid">
+              <el-button @click="pickModelSourceImages">
+                <el-icon><Picture /></el-icon>
+                选择建模图片
+              </el-button>
+              <el-button @click="pickModelSourceVideo">
+                <el-icon><VideoCamera /></el-icon>
+                选择建模视频
+              </el-button>
+            </div>
+
+            <div class="media-button-grid compact-button-grid model-action-grid">
+              <el-button type="primary" :loading="generatingModel" @click="generateModel3d">
+                {{ generatingModel ? '生成中...' : form.model3d ? '重新生成 3D' : '生成 3D 模型' }}
+              </el-button>
+              <el-button v-if="form.model3d" plain @click="removeModel3d">删除模型</el-button>
+            </div>
+
+            <div v-if="form.model3d && isEditMode" class="model-link-row">
+              <el-button link type="primary" @click="goModelPage">进入 3D 查看页</el-button>
+            </div>
+          </section>
+
+          <section class="panel-card form-section compact-card">
+            <div class="section-heading compact-heading">
+              <h2>附件</h2>
+              <p>可保存票据、说明书等其他文件。</p>
+            </div>
+
+            <el-button @click="pickAttachments">
+              <el-icon><Paperclip /></el-icon>
+              选择附件
+            </el-button>
+
+            <div v-if="otherAttachments.length === 0" class="subtle-text">暂时没有其他附件</div>
+            <div v-else class="file-list compact-file-list">
+              <div v-for="attachment in otherAttachments" :key="attachment.path" class="file-item compact-file-item">
+                <button class="file-main" type="button" @click="previewStoredFile(attachment)">
+                  <div>
+                    <strong>{{ attachment.name }}</strong>
+                    <span>{{ attachment.mimeType || '未知类型' }}</span>
+                  </div>
+                </button>
+                <el-button link type="danger" @click="removeStoredFile(attachment)">删除</el-button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel-card form-section compact-card">
+            <div class="section-heading compact-heading">
+              <h2>供应商信息</h2>
+              <p>补充联系人信息，后面找货更方便。</p>
+            </div>
+
+            <div class="field-grid">
+              <label class="field-block">
+                <span>供应商名称</span>
+                <el-input v-model="form.supplierName" class="field-input" placeholder="请输入供应商名称" />
+              </label>
+              <label class="field-block">
+                <span>供应商电话</span>
+                <el-input v-model="form.supplierPhone" class="field-input" inputmode="tel" placeholder="请输入供应商电话" />
+              </label>
+            </div>
+          </section>
+
+          <section class="action-stack">
+            <el-button :loading="saving" size="large" type="primary" @click="saveCurrentProduct">
+              {{ saving ? '保存中...' : '保存商品' }}
+            </el-button>
+            <el-button v-if="isEditMode" size="large" type="danger" plain @click="deleteCurrentProduct">删除商品</el-button>
+          </section>
         </div>
       </div>
     </div>
@@ -171,22 +218,27 @@
       @change="handleVideosSelected"
     />
     <input ref="attachmentInput" class="hidden-input" multiple type="file" @change="handleAttachmentsSelected" />
+    <input ref="modelImageSourceInput" accept="image/*" class="hidden-input" multiple type="file" @change="handleModelSourceImagesSelected" />
+    <input ref="modelVideoSourceInput" accept="video/*" class="hidden-input" type="file" @change="handleModelSourceVideoSelected" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { Back, Camera, Paperclip, Picture, VideoCamera } from '@element-plus/icons-vue'
+import { Back, Box, Camera, Paperclip, Picture, VideoCamera } from '@element-plus/icons-vue'
 import { Camera as CapacitorCamera, CameraResultType, CameraSource } from '@capacitor/camera'
 import { Capacitor } from '@capacitor/core'
 import { ElMessage } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { deleteStoredFile, openStoredFile, resolveFileUrl, saveFile, savePhotoBlob } from '../services/file-service'
+import ProductModelViewer from '../components/ProductModelViewer.vue'
+import { consumePendingProductCreateDraft } from '../services/product-create-draft'
+import { deleteStoredFile, openStoredFile, resolveFileUrl, saveBlobFile, saveFile, savePhotoBlob } from '../services/file-service'
 import { createId } from '../services/id'
+import { generateProductModel } from '../services/model-reconstruction-service'
 import { deleteProduct, getProductById, saveProduct } from '../services/product-store'
 import { removeProductVisualIndex, upsertProductVisualIndex } from '../services/visual-search-service'
 import { hasVideoFileExtension, isVideoMimeType, isVideoStoredFile } from '../types/product'
-import type { Product, StoredFile } from '../types/product'
+import type { Product, ProductModel3D, StoredFile } from '../types/product'
 
 const router = useRouter()
 const route = useRoute()
@@ -195,10 +247,16 @@ const imageInput = ref<HTMLInputElement | null>(null)
 const videoInput = ref<HTMLInputElement | null>(null)
 const videoCaptureInput = ref<HTMLInputElement | null>(null)
 const attachmentInput = ref<HTMLInputElement | null>(null)
+const modelImageSourceInput = ref<HTMLInputElement | null>(null)
+const modelVideoSourceInput = ref<HTMLInputElement | null>(null)
 const imagePreview = ref('')
+const modelPreviewUrl = ref('')
 const saving = ref(false)
+const generatingModel = ref(false)
 const createdAt = ref('')
 const removedFiles = ref<StoredFile[]>([])
+const modelSourceImages = ref<File[]>([])
+const modelSourceVideo = ref<File | null>(null)
 const isWebPlatform = Capacitor.getPlatform() === 'web'
 
 const form = reactive({
@@ -209,6 +267,7 @@ const form = reactive({
   supplierPhone: '',
   image: null as StoredFile | null,
   attachments: [] as StoredFile[],
+  model3d: null as ProductModel3D | null,
 })
 
 const productId = computed(() => String(route.params.id ?? ''))
@@ -235,6 +294,25 @@ const attachmentGroups = computed(() => {
 })
 const videoAttachments = computed(() => attachmentGroups.value.videos)
 const otherAttachments = computed(() => attachmentGroups.value.others)
+const modelSourceSummary = computed(() => {
+  if (modelSourceVideo.value) {
+    return `已选短视频：${modelSourceVideo.value.name}`
+  }
+
+  if (modelSourceImages.value.length > 0) {
+    return `已选 ${modelSourceImages.value.length} 张建模图片`
+  }
+
+  if (videoAttachments.value.length > 0) {
+    return `将使用当前商品视频：${videoAttachments.value[0].name}`
+  }
+
+  if (form.image) {
+    return '将使用当前商品主图'
+  }
+
+  return '还没有可用于建模的图片或视频'
+})
 
 function showToast(message: string, color: 'success' | 'warning' | 'danger' = 'success') {
   const type = color === 'danger' ? 'error' : color
@@ -256,6 +334,11 @@ function goBack() {
   router.push('/')
 }
 
+function goModelPage(): void {
+  if (!productId.value) return
+  router.push(`/product/${productId.value}/model`)
+}
+
 function pickImage() {
   imageInput.value?.click()
 }
@@ -272,8 +355,35 @@ function pickAttachments() {
   attachmentInput.value?.click()
 }
 
+function pickModelSourceImages() {
+  modelImageSourceInput.value?.click()
+}
+
+function pickModelSourceVideo() {
+  modelVideoSourceInput.value?.click()
+}
+
 async function refreshImagePreview() {
   imagePreview.value = await resolveFileUrl(form.image)
+}
+
+async function refreshModelPreview() {
+  modelPreviewUrl.value = form.model3d ? await resolveFileUrl(form.model3d.file) : ''
+}
+
+function applyCreateDraft(): void {
+  const draft = consumePendingProductCreateDraft()
+  if (!draft) {
+    return
+  }
+
+  form.name = draft.name ?? ''
+  form.priceText = draft.priceText ?? ''
+  form.description = draft.description ?? ''
+  form.supplierName = draft.supplierName ?? ''
+  form.supplierPhone = draft.supplierPhone ?? ''
+  form.image = draft.image ?? null
+  form.attachments = [...(draft.attachments ?? [])]
 }
 
 function fillForm(product: Product) {
@@ -284,12 +394,16 @@ function fillForm(product: Product) {
   form.supplierPhone = product.supplierPhone
   form.image = product.image
   form.attachments = [...product.attachments]
+  form.model3d = product.model3d
   createdAt.value = product.createdAt
 }
 
 async function loadProduct() {
   if (!isEditMode.value) {
     createdAt.value = new Date().toISOString()
+    applyCreateDraft()
+    await refreshImagePreview()
+    await refreshModelPreview()
     return
   }
 
@@ -301,7 +415,7 @@ async function loadProduct() {
   }
 
   fillForm(product)
-  await refreshImagePreview()
+  await Promise.all([refreshImagePreview(), refreshModelPreview()])
 }
 
 async function replaceImage(file: StoredFile) {
@@ -310,6 +424,15 @@ async function replaceImage(file: StoredFile) {
   }
   form.image = file
   await refreshImagePreview()
+}
+
+async function replaceModel3d(nextModel: ProductModel3D) {
+  if (form.model3d) {
+    removedFiles.value.push(form.model3d.file)
+  }
+
+  form.model3d = nextModel
+  await refreshModelPreview()
 }
 
 async function addAttachmentFiles(files: File[]) {
@@ -436,6 +559,92 @@ async function syncVisualIndex(product: Product) {
   await removeProductVisualIndex(product.id)
 }
 
+async function handleModelSourceImagesSelected(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+
+  if (files.length === 0) return
+
+  modelSourceImages.value = files
+  modelSourceVideo.value = null
+  showToast(`已选择 ${files.length} 张建模图片`)
+}
+
+async function handleModelSourceVideoSelected(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0] ?? null
+  input.value = ''
+
+  if (!file) return
+
+  modelSourceVideo.value = file
+  modelSourceImages.value = []
+  showToast(`已选择建模视频：${file.name}`)
+}
+
+async function buildModelGenerationInput() {
+  if (modelSourceVideo.value) {
+    return {
+      videoFile: modelSourceVideo.value,
+    }
+  }
+
+  if (modelSourceImages.value.length > 0) {
+    return {
+      imageFiles: [...modelSourceImages.value],
+    }
+  }
+
+  if (videoAttachments.value.length > 0) {
+    return {
+      videoUrl: await resolveFileUrl(videoAttachments.value[0]),
+    }
+  }
+
+  if (form.image) {
+    return {
+      imageUrls: [await resolveFileUrl(form.image)],
+    }
+  }
+
+  throw new Error('请先准备建模图片或短视频')
+}
+
+async function generateModel3d(): Promise<void> {
+  generatingModel.value = true
+
+  try {
+    const input = await buildModelGenerationInput()
+    const generated = await generateProductModel(input)
+    const storedFile = await saveBlobFile(generated.blob, generated.fileName, 'model/gltf-binary', 'model')
+
+    await replaceModel3d({
+      file: storedFile,
+      sourceType: generated.sourceType,
+      generatedAt: new Date().toISOString(),
+      engineId: generated.engineId,
+      sourceCount: generated.sourceCount,
+    })
+
+    showToast('3D 模型已生成')
+  } catch (error) {
+    console.error(error)
+    showToast(error instanceof Error ? error.message : '3D 模型生成失败', 'danger')
+  } finally {
+    generatingModel.value = false
+  }
+}
+
+async function removeModel3d(): Promise<void> {
+  if (!form.model3d) return
+
+  removedFiles.value.push(form.model3d.file)
+  form.model3d = null
+  modelPreviewUrl.value = ''
+  showToast('已移除 3D 模型')
+}
+
 async function saveCurrentProduct() {
   if (!form.name.trim()) {
     showToast('请先填写商品名称', 'warning')
@@ -460,6 +669,7 @@ async function saveCurrentProduct() {
       supplierPhone: form.supplierPhone.trim(),
       image: form.image,
       attachments: [...form.attachments],
+      model3d: form.model3d,
       createdAt: createdAt.value || now,
       updatedAt: now,
     }
@@ -500,6 +710,7 @@ async function deleteCurrentProduct() {
     for (const file of form.attachments) {
       await deleteStoredFile(file)
     }
+    await deleteStoredFile(form.model3d?.file ?? null)
 
     await deleteProduct(productId.value)
     await removeProductVisualIndex(productId.value)
@@ -520,12 +731,12 @@ onMounted(async () => {
 .form-page {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   height: 100vh;
   height: 100dvh;
   min-height: 100vh;
   min-height: 100dvh;
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
   overflow: hidden;
 }
 
@@ -545,26 +756,30 @@ onMounted(async () => {
 .form-scroll-area {
   height: 100%;
   overflow-y: auto;
-  padding: 0 4px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  padding: 0 4px calc(env(safe-area-inset-bottom, 0px) + 20px);
 }
 
 .form-content {
   display: grid;
-  gap: 14px;
+  gap: 10px;
+}
+
+.compact-card {
+  padding: 12px;
 }
 
 .page-header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   margin-bottom: 0;
 }
 
 .header-back-button,
 .header-side-spacer {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
 }
 
 .header-back-button {
@@ -572,14 +787,14 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 14px;
+  border-radius: 12px;
   background: #f4f6fb;
   color: var(--app-title);
   cursor: pointer;
 }
 
 .header-back-button .el-icon {
-  font-size: 22px;
+  font-size: 20px;
 }
 
 .header-copy {
@@ -589,6 +804,7 @@ onMounted(async () => {
 .page-title {
   margin: 0;
   text-align: left;
+  font-size: 20px;
 }
 
 .header-side-spacer {
@@ -599,27 +815,27 @@ onMounted(async () => {
   margin-bottom: 0;
 }
 
-.section-heading {
-  margin-bottom: 14px;
+.compact-heading {
+  margin-bottom: 10px;
 }
 
-.section-heading h2 {
+.compact-heading h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   color: var(--app-title);
 }
 
-.section-heading p {
-  margin: 8px 0 0;
+.compact-heading p {
+  margin: 6px 0 0;
   color: var(--app-text-secondary);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 10px;
 }
 
 .field-block {
@@ -627,37 +843,38 @@ onMounted(async () => {
 }
 
 .field-block-expanded {
-  margin-top: 14px;
+  margin-top: 10px;
 }
 
 .field-block span {
   display: block;
-  margin-bottom: 8px;
-  font-size: 15px;
+  margin-bottom: 6px;
+  font-size: 14px;
   color: var(--app-text-secondary);
 }
 
 .field-error {
-  margin: 8px 2px 0;
+  margin: 6px 2px 0;
   color: var(--app-danger);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 :deep(.field-input .el-input__wrapper),
 :deep(.field-input .el-textarea__inner) {
-  border-radius: 14px;
+  border-radius: 12px;
 }
 
-.preview-box {
-  margin-bottom: 14px;
+.compact-preview-box,
+.compact-preview-empty {
+  margin-bottom: 10px;
 }
 
 .preview-image {
   width: 100%;
-  min-height: 180px;
-  max-height: 280px;
+  min-height: 150px;
+  max-height: 220px;
   object-fit: cover;
-  border-radius: 18px;
+  border-radius: 16px;
 }
 
 .preview-empty {
@@ -666,30 +883,33 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 180px;
-  margin-bottom: 14px;
+  min-height: 140px;
   border: 1px dashed var(--app-border);
-  border-radius: 18px;
+  border-radius: 16px;
   color: var(--app-text-secondary);
   background: #f9fafc;
 }
 
 .preview-empty .el-icon {
-  font-size: 40px;
+  font-size: 34px;
 }
 
-.video-empty {
-  min-height: 140px;
+.video-empty,
+.model-empty {
+  min-height: 120px;
+}
+
+.compact-button-grid {
+  gap: 8px;
 }
 
 .media-button-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
 }
 
 .media-button-grid-spaced {
-  margin-top: 14px;
+  margin-top: 10px;
 }
 
 .media-button-grid :deep(.el-button + .el-button) {
@@ -697,18 +917,26 @@ onMounted(async () => {
 }
 
 .subtle-text {
-  margin-top: 12px;
+  margin-top: 10px;
   color: var(--app-text-secondary);
+  font-size: 13px;
 }
 
 .section-note {
-  line-height: 1.5;
+  line-height: 1.45;
+}
+
+.compact-file-list {
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .file-list {
   display: grid;
-  gap: 10px;
-  margin-top: 12px;
+}
+
+.compact-file-item {
+  padding: 10px 12px;
 }
 
 .file-item {
@@ -717,9 +945,8 @@ onMounted(async () => {
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  padding: 12px 14px;
   border: 1px solid var(--app-border);
-  border-radius: 14px;
+  border-radius: 12px;
   background: #f9fafc;
 }
 
@@ -737,16 +964,44 @@ onMounted(async () => {
   display: block;
 }
 
+.file-item strong {
+  font-size: 14px;
+}
+
 .file-item span {
   margin-top: 4px;
   color: var(--app-text-secondary);
-  font-size: 13px;
+  font-size: 12px;
+}
+
+.model-preview-box {
+  margin-bottom: 10px;
+}
+
+.model-meta-row,
+.source-summary,
+.model-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.source-summary {
+  color: var(--app-text-secondary);
+}
+
+.model-action-grid {
+  margin-top: 10px;
 }
 
 .action-stack {
   display: grid;
-  gap: 12px;
-  margin-top: 8px;
+  gap: 10px;
+  margin-top: 4px;
 }
 
 .action-stack :deep(.el-button + .el-button) {
@@ -764,7 +1019,7 @@ onMounted(async () => {
   }
 
   .page-title {
-    font-size: 20px;
+    font-size: 18px;
   }
 
   .file-item {

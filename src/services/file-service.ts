@@ -15,6 +15,8 @@ const mimeTypeToExtension: Record<string, string> = {
   'video/quicktime': 'mov',
   'video/webm': 'webm',
   'video/x-matroska': 'mkv',
+  'model/gltf-binary': 'glb',
+  'model/gltf+json': 'gltf',
   'application/pdf': 'pdf',
   'text/plain': 'txt',
 }
@@ -80,14 +82,17 @@ async function saveBase64File(base64Data: string, originalName: string, mimeType
   } satisfies StoredFile
 }
 
+export async function saveBlobFile(blob: Blob, fileName: string, mimeType: string, kind: StoredFile['kind']) {
+  const dataUrl = await blobToDataUrl(blob)
+  return await saveBase64File(dataUrl, fileName, mimeType, kind)
+}
+
 export async function saveFile(file: File, kind: StoredFile['kind']) {
-  const dataUrl = await blobToDataUrl(file)
-  return await saveBase64File(dataUrl, file.name, file.type || 'application/octet-stream', kind)
+  return await saveBlobFile(file, file.name, file.type || 'application/octet-stream', kind)
 }
 
 export async function savePhotoBlob(blob: Blob, mimeType = 'image/jpeg') {
-  const dataUrl = await blobToDataUrl(blob)
-  return await saveBase64File(dataUrl, `photo.${getExtensionFromMimeType(mimeType)}`, mimeType, 'image')
+  return await saveBlobFile(blob, `photo.${getExtensionFromMimeType(mimeType)}`, mimeType, 'image')
 }
 
 export async function getStoredFileUri(file: StoredFile | null) {
