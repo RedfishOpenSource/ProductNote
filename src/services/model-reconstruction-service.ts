@@ -47,7 +47,7 @@ async function createTextureFromSource(src: string): Promise<Texture> {
   return texture
 }
 
-async function createFrameTexture(video: HTMLVideoElement): Promise<Texture> {
+function createFrameTexture(video: HTMLVideoElement): Texture {
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, video.videoWidth)
   canvas.height = Math.max(1, video.videoHeight)
@@ -58,20 +58,29 @@ async function createFrameTexture(video: HTMLVideoElement): Promise<Texture> {
   }
 
   context.drawImage(video, 0, 0, canvas.width, canvas.height)
-  const bitmap = await createImageBitmap(canvas)
-  const texture = new CanvasTexture(bitmap)
+  const texture = new CanvasTexture(canvas)
   texture.colorSpace = SRGBColorSpace
   texture.needsUpdate = true
   return texture
 }
 
 function waitForEvent(target: HTMLMediaElement, eventName: 'loadedmetadata' | 'seeked'): Promise<void> {
-  return new Promise((resolve) => {
-    const handler = () => {
-      target.removeEventListener(eventName, handler)
+  return new Promise((resolve, reject) => {
+    const handleSuccess = () => {
+      cleanup()
       resolve()
     }
-    target.addEventListener(eventName, handler)
+    const handleError = () => {
+      cleanup()
+      reject(new Error('媒体资源加载失败'))
+    }
+    const cleanup = () => {
+      target.removeEventListener(eventName, handleSuccess)
+      target.removeEventListener('error', handleError)
+    }
+
+    target.addEventListener(eventName, handleSuccess, { once: true })
+    target.addEventListener('error', handleError, { once: true })
   })
 }
 
@@ -81,7 +90,13 @@ async function loadVideo(src: string): Promise<HTMLVideoElement> {
   video.muted = true
   video.playsInline = true
   video.src = src
+  video.load()
   await waitForEvent(video, 'loadedmetadata')
+
+  if (!video.videoWidth || !video.videoHeight) {
+    throw new Error('无法读取视频尺寸')
+  }
+
   return video
 }
 
@@ -95,7 +110,7 @@ async function extractVideoTextures(videoSource: File | string): Promise<Texture
     for (const checkpoint of videoTextureCheckpoints) {
       video.currentTime = Math.min(duration * checkpoint, Math.max(duration - 0.05, 0))
       await waitForEvent(video, 'seeked')
-      textures.push(await createFrameTexture(video))
+      textures.push(createFrameTexture(video))
     }
 
     return textures

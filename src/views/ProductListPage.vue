@@ -240,10 +240,13 @@
             class="create-entry-card"
             type="button"
             :disabled="createEntryBusy"
-            @pointercancel="handleCreateCameraPressCancel"
-            @pointerdown="handleCreateCameraPressStart"
-            @pointerleave="handleCreateCameraPressCancel"
-            @pointerup="handleCreateCameraPressEnd"
+            @touchcancel.prevent="handleCreateCameraPressCancel"
+            @touchend.prevent="handleCreateCameraTouchEnd"
+            @touchstart.prevent="handleCreateCameraTouchStart"
+            @mousedown="handleCreateCameraMouseStart"
+            @mouseleave="handleCreateCameraPressCancel"
+            @mouseup="handleCreateCameraMouseEnd"
+            @contextmenu.prevent
             @click="handleCreateCameraClick"
           >
             <strong>相机</strong>
@@ -376,8 +379,9 @@ const searchingByPhoto = ref(false)
 const settingsOpen = ref(false)
 const createEntryOpen = ref(false)
 const createEntryBusy = ref(false)
-const createCameraLongPressTimer = ref<number | null>(null)
-const createCameraLongPressTriggered = ref(false)
+const createCameraPressStartedAt = ref<number | null>(null)
+const createCameraSuppressClick = ref(false)
+const createCameraTouchActive = ref(false)
 const pageGestureStartX = ref(0)
 const pageGestureStartY = ref(0)
 const pageGestureAxis = ref<SwipeAxis | null>(null)
@@ -394,6 +398,7 @@ const drawerSwipeEdge = 24
 const drawerSwipeThreshold = 40
 const drawerDragStartThreshold = 8
 const drawerCloseThreshold = 72
+const createCameraLongPressThreshold = 420
 
 const drawerStyle = computed(() => ({
   '--settings-drawer-offset': `${drawerDragOffsetX.value}px`,
@@ -494,15 +499,13 @@ async function loadUiState() {
 }
 
 function clearCreateCameraTimer(): void {
-  if (createCameraLongPressTimer.value !== null) {
-    window.clearTimeout(createCameraLongPressTimer.value)
-    createCameraLongPressTimer.value = null
-  }
+  createCameraPressStartedAt.value = null
 }
 
 function closeCreateEntry(): void {
   clearCreateCameraTimer()
-  createCameraLongPressTriggered.value = false
+  createCameraSuppressClick.value = false
+  createCameraTouchActive.value = false
   createEntryOpen.value = false
 }
 
@@ -530,42 +533,112 @@ function openCreateAlbumPicker(): void {
   openFileInput(createAlbumInput.value)
 }
 
-function openCreatePhotoCapture(): void {
-  openFileInput(createPhotoCaptureInput.value)
+async function openCreatePhotoCapture(): Promise<void> {
+  if (isWebPlatform) {
+    openFileInput(createPhotoCaptureInput.value)
+    return
+  }
+
+  createEntryBusy.value = true
+
+  try {
+    const photo = await CapacitorCamera.getPhoto({
+      quality: 75,
+      source: CameraSource.Camera,
+      resultType: CameraResultType.Uri,
+    })
+
+    if (!photo.webPath) {
+      return
+    }
+
+    const response = await fetch(photo.webPath)
+    const blob = await response.blob()
+    const mimeType = blob.type || (photo.format ? `image/${photo.format}` : 'image/jpeg')
+    const image = await savePhotoBlob(blob, mimeType)
+    startCreateWithDraft({ image })
+  } catch (error) {
+    console.error(error)
+    showToast('拍照新建失败，请稍后重试', 'danger')
+  } finally {
+    createEntryBusy.value = false
+  }
 }
 
 function openCreateVideoCapture(): void {
   openFileInput(createVideoCaptureInput.value)
 }
 
+function releaseCreateCameraClickSuppression(): void {
+  window.setTimeout(() => {
+    createCameraSuppressClick.value = false
+    createCameraTouchActive.value = false
+  }, 0)
+}
+
 function handleCreateCameraPressStart(): void {
   if (createEntryBusy.value) return
 
   clearCreateCameraTimer()
-  createCameraLongPressTriggered.value = false
-  createCameraLongPressTimer.value = window.setTimeout(() => {
-    createCameraLongPressTriggered.value = true
-    openCreateVideoCapture()
-  }, 420)
+  createCameraSuppressClick.value = true
+  createCameraPressStartedAt.value = Date.now()
 }
 
-function handleCreateCameraPressEnd(): void {
+async function handleCreateCameraPressEnd(): Promise<void> {
+  if (createEntryBusy.value || createCameraPressStartedAt.value === null) {
+    return
+  }
+
+  const pressedDuration = Date.now() - createCameraPressStartedAt.value
   clearCreateCameraTimer()
+
+  if (pressedDuration >= createCameraLongPressThreshold) {
+    openCreateVideoCapture()
+  } else {
+    await openCreatePhotoCapture()
+  }
+
+  releaseCreateCameraClickSuppression()
 }
 
 function handleCreateCameraPressCancel(): void {
   clearCreateCameraTimer()
+  releaseCreateCameraClickSuppression()
 }
 
-function handleCreateCameraClick(): void {
-  if (createEntryBusy.value) return
+function handleCreateCameraTouchStart(): void {
+  createCameraTouchActive.value = true
+  handleCreateCameraPressStart()
+}
 
-  if (createCameraLongPressTriggered.value) {
-    createCameraLongPressTriggered.value = false
+async function handleCreateCameraTouchEnd(): Promise<void> {
+  await handleCreateCameraPressEnd()
+}
+
+function handleCreateCameraMouseStart(): void {
+  if (createCameraTouchActive.value) {
     return
   }
 
-  openCreatePhotoCapture()
+  handleCreateCameraPressStart()
+}
+
+async function handleCreateCameraMouseEnd(): Promise<void> {
+  if (createCameraTouchActive.value) {
+    return
+  }
+
+  await handleCreateCameraPressEnd()
+}
+
+async function handleCreateCameraClick(): Promise<void> {
+  if (createEntryBusy.value) return
+
+  if (createCameraSuppressClick.value || createCameraTouchActive.value) {
+    return
+  }
+
+  await openCreatePhotoCapture()
 }
 
 async function createVideoCoverBlob(file: File): Promise<Blob> {
@@ -657,7 +730,6 @@ async function handleCreateVideoCaptured(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
-  createCameraLongPressTriggered.value = false
 
   if (!file) return
 
