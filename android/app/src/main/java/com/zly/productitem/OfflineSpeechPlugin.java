@@ -25,6 +25,10 @@ import java.util.Locale;
     }
 )
 public class OfflineSpeechPlugin extends Plugin {
+    private static final String DEFAULT_PROMPT = "请说出商品信息";
+    private static final String DEFAULT_LANGUAGE = Locale.SIMPLIFIED_CHINESE.toLanguageTag();
+    private static final int MAX_RECOGNITION_RESULTS = 5;
+
     private SpeechRecognizer speechRecognizer;
     private PluginCall recognitionCall;
 
@@ -134,19 +138,7 @@ public class OfflineSpeechPlugin extends Plugin {
             }
         });
 
-        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, call.getString("language", Locale.SIMPLIFIED_CHINESE.toLanguageTag()));
-        intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
-        intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
-        intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
-
-        String prompt = call.getString("prompt", "请说出商品信息");
-        if (prompt != null && !prompt.isEmpty()) {
-            intent.putExtra(RecognizerIntent.EXTRA_PROMPT, prompt);
-        }
-
-        speechRecognizer.startListening(intent);
+        speechRecognizer.startListening(buildRecognitionIntent(call));
     }
 
     private void rejectRecognition(String message) {
@@ -169,6 +161,22 @@ public class OfflineSpeechPlugin extends Plugin {
             speechRecognizer.destroy();
             speechRecognizer = null;
         }
+    }
+
+    private Intent buildRecognitionIntent(PluginCall call) {
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, call.getString("language", DEFAULT_LANGUAGE));
+        intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, MAX_RECOGNITION_RESULTS);
+        intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
+        intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, call.getBoolean("preferOffline", true));
+
+        String prompt = call.getString("prompt", DEFAULT_PROMPT);
+        if (prompt != null && !prompt.isEmpty()) {
+            intent.putExtra(RecognizerIntent.EXTRA_PROMPT, prompt);
+        }
+
+        return intent;
     }
 
     private String mapRecognitionError(int error) {

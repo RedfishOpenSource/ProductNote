@@ -26,27 +26,27 @@
         <el-icon><Back /></el-icon>
       </button>
 
-      <button
+      <section
         class="video-detail-preview"
-        type="button"
         @click="openDetailSheet"
         @touchcancel="handlePreviewTouchEnd"
         @touchend="handlePreviewTouchEnd"
         @touchmove="handlePreviewTouchMove"
         @touchstart="handlePreviewTouchStart"
       >
-        <div class="video-detail-heading">
-          <strong>{{ product.name }}</strong>
-          <span class="video-detail-price">{{ formatPrice(product.price) }}</span>
+        <div class="video-detail-preview-content">
+          <span class="video-detail-tag">商品视频</span>
+          <div class="video-detail-heading">
+            <strong>{{ product.name }}</strong>
+            <span class="video-detail-price">{{ formatPrice(product.price) }}</span>
+          </div>
+          <p class="video-detail-description">{{ productDescription }}</p>
+          <div class="video-detail-footer">
+            <span class="video-detail-supplier">{{ productSupplierName }}</span>
+            <button class="video-detail-action" type="button" @click.stop="openDetailSheet">查看详情</button>
+          </div>
         </div>
-        <div class="video-detail-footer">
-          <span class="video-detail-supplier">{{ product.supplierName || '未填写供应商' }}</span>
-          <span class="video-detail-action">
-            <el-icon><ArrowUp /></el-icon>
-            点击展开
-          </span>
-        </div>
-      </button>
+      </section>
 
       <button v-if="detailSheetOpen" class="detail-sheet-backdrop" type="button" aria-label="关闭详情" @click="closeDetailSheet" />
 
@@ -65,27 +65,27 @@
               <h2>{{ product.name }}</h2>
               <p>{{ formatPrice(product.price) }}</p>
             </div>
-            <span class="detail-sheet-subtitle">{{ product.supplierName || '未填写供应商' }}</span>
+            <span class="detail-sheet-subtitle">{{ productSupplierName }}</span>
           </div>
         </div>
 
         <div class="detail-sheet-body">
           <section class="detail-sheet-section">
             <h3>商品描述</h3>
-            <p class="detail-sheet-description">{{ product.description || '暂无商品描述' }}</p>
+            <p class="detail-sheet-description">{{ productDescription }}</p>
           </section>
           <div class="detail-sheet-meta">
             <div>
               <span>供应商</span>
-              <strong>{{ product.supplierName || '未填写供应商' }}</strong>
+              <strong>{{ productSupplierName }}</strong>
             </div>
             <div>
               <span>联系电话</span>
-              <strong>{{ product.supplierPhone || '未填写电话' }}</strong>
+              <strong>{{ productSupplierPhone }}</strong>
             </div>
             <div>
               <span>附件数量</span>
-              <strong>{{ product.attachments.length }} 个附件</strong>
+              <strong>{{ attachmentCountLabel }}</strong>
             </div>
           </div>
           <el-button plain @click="goDetail">进入完整详情页</el-button>
@@ -122,10 +122,10 @@
           <p class="info-label">商品名称</p>
           <h2>{{ product.name }}</h2>
         </div>
-        <p class="info-description">{{ product.description || '暂无商品描述' }}</p>
+        <p class="info-description">{{ productDescription }}</p>
         <div class="info-meta">
-          <span>{{ product.supplierName || '未填写供应商' }}</span>
-          <span>{{ product.supplierPhone || '未填写电话' }}</span>
+          <span>{{ productSupplierName }}</span>
+          <span>{{ productSupplierPhone }}</span>
         </div>
         <el-button type="primary" @click="goDetail">进入详情页</el-button>
       </section>
@@ -134,7 +134,7 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowUp, Back, Loading, Picture } from '@element-plus/icons-vue'
+import { Back, Loading, Picture } from '@element-plus/icons-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { resolveFileUrl } from '../services/file-service'
@@ -167,16 +167,20 @@ const detailSheetMaxDragOffset = 420
 
 const productId = computed(() => String(route.params.id ?? ''))
 const showVideoPlayer = computed(() => activeMediaType.value === 'video' && Boolean(activeMediaUrl.value) && Boolean(product.value))
+const productDescription = computed(() => product.value?.description || '暂无商品描述')
+const productSupplierName = computed(() => product.value?.supplierName || '未填写供应商')
+const productSupplierPhone = computed(() => product.value?.supplierPhone || '未填写电话')
+const attachmentCountLabel = computed(() => `${product.value?.attachments.length ?? 0} 个附件`)
 const detailSheetStyle = computed(() => ({
   '--detail-sheet-offset': `${detailSheetOpen.value ? detailSheetDragOffsetY.value : 100}%`,
   '--detail-sheet-transition': detailSheetDragging.value ? 'none' : 'transform 220ms ease-out',
 }))
 
-function goHome() {
+function goHome(): void {
   router.replace('/')
 }
 
-function goBack() {
+function goBack(): void {
   if (window.history.length > 1) {
     router.back()
     return
@@ -302,7 +306,7 @@ function handleDetailSheetTouchEnd(): void {
   detailSheetOpen.value = true
 }
 
-function goDetail() {
+function goDetail(): void {
   if (!productId.value) {
     goHome()
     return
@@ -384,10 +388,11 @@ onMounted(async () => {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 16px);
   left: 16px;
-  z-index: 2;
-  background: rgba(17, 19, 24, 0.52);
+  z-index: 3;
+  background: rgba(9, 12, 18, 0.68);
   color: #ffffff;
-  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(12px);
 }
 
 .header-back-button .el-icon,
@@ -414,8 +419,19 @@ onMounted(async () => {
 .video-player-shell {
   position: fixed;
   inset: 0;
+  isolation: isolate;
   background: #000000;
   overflow: hidden;
+}
+
+.video-player-shell::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: min(42vh, 360px);
+  background: linear-gradient(180deg, rgba(3, 5, 10, 0) 0%, rgba(3, 5, 10, 0.2) 26%, rgba(3, 5, 10, 0.82) 100%);
+  pointer-events: none;
+  z-index: 1;
 }
 
 .fullscreen-video {
@@ -423,34 +439,49 @@ onMounted(async () => {
   width: 100vw;
   height: 100vh;
   height: 100dvh;
-  object-fit: contain;
+  object-fit: cover;
   background: #000000;
 }
 
 .video-detail-preview {
   position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 2;
-  display: grid;
-  gap: 6px;
-  width: auto;
-  padding: 10px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 20px;
-  background: rgba(15, 18, 24, 0.1);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
-  backdrop-filter: blur(4px);
+  padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 20px);
   color: #ffffff;
-  text-align: left;
+  cursor: pointer;
+}
+
+.video-detail-preview-content {
+  display: grid;
+  gap: 14px;
+  max-width: min(100%, 520px);
+  padding: 22px 18px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 26px;
+  background: linear-gradient(180deg, rgba(12, 16, 24, 0.18) 0%, rgba(12, 16, 24, 0.74) 100%);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(12px);
+}
+
+.video-detail-tag {
+  display: inline-flex;
+  width: fit-content;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  line-height: 1;
 }
 
 .video-detail-heading {
   display: flex;
-  align-items: baseline;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
   min-width: 0;
 }
 
@@ -460,53 +491,60 @@ onMounted(async () => {
   color: #ffffff;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.2;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
 }
 
 .video-detail-price {
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 12px;
-  font-weight: 600;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 14px;
+  font-weight: 700;
   line-height: 1.2;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+}
+
+.video-detail-description {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.88);
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  line-height: 1.7;
+  text-shadow: 0 3px 14px rgba(0, 0, 0, 0.32);
 }
 
 .video-detail-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
 }
 
 .video-detail-supplier {
   min-width: 0;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(255, 255, 255, 0.78);
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
-  line-height: 1.2;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  line-height: 1.3;
+  text-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
 }
 
 .video-detail-action {
-  display: inline-flex;
   flex-shrink: 0;
-  align-items: center;
-  gap: 4px;
-  color: rgba(255, 255, 255, 0.94);
-  font-size: 11px;
-  line-height: 1.2;
-  white-space: nowrap;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
-}
-
-.video-detail-action .el-icon {
-  font-size: 12px;
+  min-height: 42px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #111318;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .detail-sheet-backdrop {
@@ -715,20 +753,41 @@ onMounted(async () => {
 
 @media (max-width: 640px) {
   .video-detail-preview {
-    left: 10px;
-    right: 10px;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
-    padding: 9px 10px;
+    padding: 0 12px calc(env(safe-area-inset-bottom, 0px) + 16px);
+  }
+
+  .video-detail-preview-content {
+    gap: 12px;
+    padding: 18px 14px 14px;
+    border-radius: 22px;
+  }
+
+  .video-detail-heading {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .video-detail-heading strong {
-    font-size: 14px;
+    font-size: 20px;
   }
 
-  .video-detail-price,
+  .video-detail-price {
+    font-size: 13px;
+  }
+
+  .video-detail-description {
+    -webkit-line-clamp: 2;
+    font-size: 13px;
+  }
+
   .video-detail-supplier,
   .video-detail-action {
-    font-size: 10px;
+    font-size: 12px;
+  }
+
+  .video-detail-action {
+    min-height: 38px;
+    padding: 0 16px;
   }
 
   .detail-sheet {

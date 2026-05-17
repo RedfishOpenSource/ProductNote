@@ -240,11 +240,11 @@
             class="create-entry-card"
             type="button"
             :disabled="createEntryBusy"
-            @touchcancel.prevent="handleCreateCameraPressCancel"
+            @touchcancel.prevent="handleCreateCameraTouchCancel"
             @touchend.prevent="handleCreateCameraTouchEnd"
             @touchstart.prevent="handleCreateCameraTouchStart"
             @mousedown="handleCreateCameraMouseStart"
-            @mouseleave="handleCreateCameraPressCancel"
+            @mouseleave="handleCreateCameraMouseLeave"
             @mouseup="handleCreateCameraMouseEnd"
             @contextmenu.prevent
             @click="handleCreateCameraClick"
@@ -258,7 +258,7 @@
           </button>
           <button class="create-entry-card" type="button" :disabled="createEntryBusy" @click="startAiCreate">
             <strong>{{ createEntryBusy ? '识别中...' : 'AI 录入' }}</strong>
-            <span>离线语音转文字并预填字段</span>
+            <span>语音转文字并预填字段</span>
           </button>
         </div>
       </div>
@@ -330,7 +330,7 @@ import { useRouter } from 'vue-router'
 import { exportProducts, importProducts } from '../services/backup-service'
 import { deleteStoredFile, readImportFile, resolveFileUrl, saveFile, savePhotoBlob } from '../services/file-service'
 import { buildDraftFromSpeechText } from '../services/local-ai-entry-service'
-import { startOfflineSpeechRecognition, isOfflineSpeechSupported } from '../services/offline-speech-service'
+import { isOfflineSpeechSupported, startOfflineSpeechRecognition } from '../services/offline-speech-service'
 import { clearPendingProductCreateDraft, setPendingProductCreateDraft } from '../services/product-create-draft'
 import type { ProductCreateDraft } from '../services/product-create-draft'
 import { formatPrice } from '../services/product-format'
@@ -379,7 +379,8 @@ const searchingByPhoto = ref(false)
 const settingsOpen = ref(false)
 const createEntryOpen = ref(false)
 const createEntryBusy = ref(false)
-const createCameraPressStartedAt = ref<number | null>(null)
+const createCameraLongPressTimer = ref<number | null>(null)
+const createCameraLongPressTriggered = ref(false)
 const createCameraSuppressClick = ref(false)
 const createCameraTouchActive = ref(false)
 const pageGestureStartX = ref(0)
@@ -442,7 +443,7 @@ const emptyStateDescription = computed(() => {
 })
 const emptyStateActionLabel = computed(() => (hasActiveFilters.value ? '清除搜索' : '马上新增'))
 
-function showToast(message: string, color: 'success' | 'warning' | 'danger' = 'success') {
+function showToast(message: string, color: 'success' | 'warning' | 'danger' = 'success'): void {
   const type = color === 'danger' ? 'error' : color
   ElMessage({
     message,
@@ -454,7 +455,7 @@ function productHasVideo(product: Product): boolean {
   return product.attachments.some((file) => isVideoStoredFile(file))
 }
 
-async function refreshImages() {
+async function refreshImages(): Promise<void> {
   const entries = await Promise.all(
     products.value.map(async (product) => {
       return [product.id, await resolveFileUrl(product.image)] as const
@@ -464,7 +465,7 @@ async function refreshImages() {
   imageMap.value = Object.fromEntries(entries)
 }
 
-async function prepareVisualSearch(notify = false) {
+async function prepareVisualSearch(notify = false): Promise<void> {
   if (!isVisualSearchSupported() || products.value.length === 0 || preparingVisualIndex.value) return
 
   preparingVisualIndex.value = true
@@ -484,7 +485,7 @@ async function prepareVisualSearch(notify = false) {
   }
 }
 
-async function loadData() {
+async function loadData(): Promise<void> {
   loading.value = true
   products.value = await listProducts()
   await refreshImages()
@@ -492,18 +493,26 @@ async function loadData() {
   void prepareVisualSearch(false)
 }
 
-async function loadUiState() {
+async function loadUiState(): Promise<void> {
   const [storedViewMode, storedSearchHistory] = await Promise.all([getListViewMode(), getSearchHistory()])
   viewMode.value = storedViewMode
   searchHistory.value = storedSearchHistory
 }
 
 function clearCreateCameraTimer(): void {
-  createCameraPressStartedAt.value = null
+  if (createCameraLongPressTimer.value !== null) {
+    window.clearTimeout(createCameraLongPressTimer.value)
+    createCameraLongPressTimer.value = null
+  }
+}
+
+function resetCreateCameraInteraction(): void {
+  clearCreateCameraTimer()
+  createCameraLongPressTriggered.value = false
 }
 
 function closeCreateEntry(): void {
-  clearCreateCameraTimer()
+  resetCreateCameraInteraction()
   createCameraSuppressClick.value = false
   createCameraTouchActive.value = false
   createEntryOpen.value = false
@@ -529,8 +538,26 @@ function openFileInput(input: HTMLInputElement | null): void {
   input?.click()
 }
 
+function consumeSelectedFile(event: Event): File | null {
+  const target = event.target
+  if (!(target instanceof HTMLInputElement)) {
+    return null
+  }
+
+  const file = target.files?.[0] ?? null
+  target.value = ''
+  return file
+}
+
 function openCreateAlbumPicker(): void {
   openFileInput(createAlbumInput.value)
+}
+
+async function saveCapturedPhoto(webPath: string, format?: string): Promise<StoredFile> {
+  const response = await fetch(webPath)
+  const blob = await response.blob()
+  const mimeType = blob.type || (format ? `image/${format}` : 'image/jpeg')
+  return savePhotoBlob(blob, mimeType)
 }
 
 async function openCreatePhotoCapture(): Promise<void> {
@@ -552,10 +579,7 @@ async function openCreatePhotoCapture(): Promise<void> {
       return
     }
 
-    const response = await fetch(photo.webPath)
-    const blob = await response.blob()
-    const mimeType = blob.type || (photo.format ? `image/${photo.format}` : 'image/jpeg')
-    const image = await savePhotoBlob(blob, mimeType)
+    const image = await saveCapturedPhoto(photo.webPath, photo.format)
     startCreateWithDraft({ image })
   } catch (error) {
     console.error(error)
@@ -579,30 +603,32 @@ function releaseCreateCameraClickSuppression(): void {
 function handleCreateCameraPressStart(): void {
   if (createEntryBusy.value) return
 
-  clearCreateCameraTimer()
+  resetCreateCameraInteraction()
   createCameraSuppressClick.value = true
-  createCameraPressStartedAt.value = Date.now()
+  createCameraLongPressTimer.value = window.setTimeout(() => {
+    createCameraLongPressTimer.value = null
+    createCameraLongPressTriggered.value = true
+  }, createCameraLongPressThreshold)
 }
 
-async function handleCreateCameraPressEnd(): Promise<void> {
-  if (createEntryBusy.value || createCameraPressStartedAt.value === null) {
+async function finishCreateCameraPress(options: { allowPhoto: boolean; allowVideo: boolean }): Promise<void> {
+  if (createEntryBusy.value) {
     return
   }
 
-  const pressedDuration = Date.now() - createCameraPressStartedAt.value
-  clearCreateCameraTimer()
+  const longPressTriggered = createCameraLongPressTriggered.value
+  resetCreateCameraInteraction()
 
-  if (pressedDuration >= createCameraLongPressThreshold) {
+  if (longPressTriggered && options.allowVideo) {
     openCreateVideoCapture()
-  } else {
+    releaseCreateCameraClickSuppression()
+    return
+  }
+
+  if (options.allowPhoto) {
     await openCreatePhotoCapture()
   }
 
-  releaseCreateCameraClickSuppression()
-}
-
-function handleCreateCameraPressCancel(): void {
-  clearCreateCameraTimer()
   releaseCreateCameraClickSuppression()
 }
 
@@ -612,7 +638,11 @@ function handleCreateCameraTouchStart(): void {
 }
 
 async function handleCreateCameraTouchEnd(): Promise<void> {
-  await handleCreateCameraPressEnd()
+  await finishCreateCameraPress({ allowPhoto: true, allowVideo: true })
+}
+
+async function handleCreateCameraTouchCancel(): Promise<void> {
+  await finishCreateCameraPress({ allowPhoto: false, allowVideo: true })
 }
 
 function handleCreateCameraMouseStart(): void {
@@ -628,7 +658,16 @@ async function handleCreateCameraMouseEnd(): Promise<void> {
     return
   }
 
-  await handleCreateCameraPressEnd()
+  await finishCreateCameraPress({ allowPhoto: true, allowVideo: true })
+}
+
+function handleCreateCameraMouseLeave(): void {
+  if (createCameraTouchActive.value) {
+    return
+  }
+
+  resetCreateCameraInteraction()
+  releaseCreateCameraClickSuppression()
 }
 
 async function handleCreateCameraClick(): Promise<void> {
@@ -707,30 +746,21 @@ async function startCreateFromImageFile(file: File, failureMessage: string): Pro
 }
 
 async function handleCreateAlbumSelected(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-
+  const file = consumeSelectedFile(event)
   if (!file) return
 
   await startCreateFromImageFile(file, '带图新建失败，请稍后重试')
 }
 
 async function handleCreatePhotoCaptured(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-
+  const file = consumeSelectedFile(event)
   if (!file) return
 
   await startCreateFromImageFile(file, '拍照新建失败，请稍后重试')
 }
 
 async function handleCreateVideoCaptured(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-
+  const file = consumeSelectedFile(event)
   if (!file) return
 
   createEntryBusy.value = true
@@ -756,11 +786,12 @@ function startTextCreate(): void {
 
 async function startAiCreate(): Promise<void> {
   if (!isOfflineSpeechSupported()) {
-    showToast('当前环境暂不支持离线语音录入', 'warning')
+    showToast('当前环境暂不支持语音录入', 'warning')
     return
   }
 
   createEntryBusy.value = true
+  showToast('请开始说话，系统会自动预填商品信息')
 
   try {
     const result = await startOfflineSpeechRecognition('请说出商品名称、价格、描述和供应商信息')
@@ -1071,10 +1102,7 @@ async function runPhotoSearch(
 }
 
 async function handlePhotoSearchFileSelected(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-
+  const file = consumeSelectedFile(event)
   if (!file || searchingByPhoto.value) return
 
   await runPhotoSearch(async () => saveFile(file, 'image'), '没有找到足够相似的商品，请换张图片再试试')
@@ -1115,10 +1143,7 @@ async function handlePhotoSearch(): Promise<void> {
       return null
     }
 
-    const response = await fetch(photo.webPath)
-    const blob = await response.blob()
-    const mimeType = blob.type || (photo.format ? `image/${photo.format}` : 'image/jpeg')
-    return savePhotoBlob(blob, mimeType)
+    return saveCapturedPhoto(photo.webPath, photo.format)
   }, '没有找到足够相似的商品，请换个角度再拍一次')
 }
 
