@@ -35,9 +35,8 @@
         @touchstart="handlePreviewTouchStart"
       >
         <div class="video-detail-preview-content">
-          <span class="video-detail-tag">商品视频</span>
           <div class="video-detail-heading">
-            <strong>{{ product.name }}</strong>
+            <span>{{ product.name }}</span>
             <span class="video-detail-price">{{ formatPrice(product.price) }}</span>
           </div>
           <p class="video-detail-description">{{ productDescription }}</p>
