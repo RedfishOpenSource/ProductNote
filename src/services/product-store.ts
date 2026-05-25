@@ -5,7 +5,8 @@ import {
   SQLiteConnection,
   type SQLiteDBConnection,
 } from '@capacitor-community/sqlite'
-import type { Product } from '../types/product'
+import { getPrimaryProductImage, normalizeProductImages } from '../types/product'
+import type { Product, StoredFile } from '../types/product'
 import type { ProductVisualIndex } from '../types/visual-search'
 
 const DB_NAME = 'product_item_db'
@@ -15,7 +16,21 @@ const isNativePlatform = Capacitor.getPlatform() !== 'web'
 let sqlite: SQLiteConnection | null = null
 let database: SQLiteDBConnection | null = null
 
+function parseJsonValue<T>(value: unknown, fallback: T): T {
+  if (!value) return fallback
+
+  try {
+    return JSON.parse(String(value)) as T
+  } catch {
+    return fallback
+  }
+}
+
 function mapRowToProduct(row: Record<string, unknown>) {
+  const image = parseJsonValue<StoredFile | null>(row.image_json, null)
+  const images = parseJsonValue<StoredFile[]>(row.images_json, [])
+  const normalizedImages = normalizeProductImages(image, images)
+
   return {
     id: String(row.id ?? ''),
     name: String(row.name ?? ''),
@@ -23,9 +38,10 @@ function mapRowToProduct(row: Record<string, unknown>) {
     description: String(row.description ?? ''),
     supplierName: String(row.supplier_name ?? ''),
     supplierPhone: String(row.supplier_phone ?? ''),
-    image: row.image_json ? JSON.parse(String(row.image_json)) : null,
-    attachments: row.attachments_json ? JSON.parse(String(row.attachments_json)) : [],
-    model3d: row.model_3d_json ? JSON.parse(String(row.model_3d_json)) : null,
+    image: normalizedImages[0] ?? image,
+    images: normalizedImages,
+    attachments: parseJsonValue<StoredFile[]>(row.attachments_json, []),
+    model3d: parseJsonValue<Product['model3d']>(row.model_3d_json, null),
     createdAt: String(row.created_at ?? ''),
     updatedAt: String(row.updated_at ?? ''),
   } satisfies Product
@@ -35,7 +51,7 @@ function mapRowToVisualIndex(row: Record<string, unknown>) {
   return {
     productId: String(row.product_id ?? ''),
     imagePath: String(row.image_path ?? ''),
-    labels: row.labels_json ? JSON.parse(String(row.labels_json)) : [],
+    labels: parseJsonValue(row.labels_json, []),
     modelId: String(row.model_id ?? ''),
     indexedAt: String(row.indexed_at ?? ''),
   } satisfies ProductVisualIndex
@@ -65,6 +81,7 @@ async function ensureDatabase() {
       supplier_name TEXT NOT NULL,
       supplier_phone TEXT NOT NULL,
       image_json TEXT,
+      images_json TEXT,
       attachments_json TEXT NOT NULL,
       model_3d_json TEXT,
       created_at TEXT NOT NULL,
@@ -86,13 +103,22 @@ async function ensureDatabase() {
   } catch {
     // Column already exists on upgraded installs.
   }
+  try {
+    await database.execute('ALTER TABLE products ADD COLUMN images_json TEXT')
+  } catch {
+    // Column already exists on upgraded installs.
+  }
 
   return database
 }
 
 function normalizeProduct(product: Product): Product {
+  const images = normalizeProductImages(product.image, product.images)
+
   return {
     ...product,
+    image: images[0] ?? product.image ?? null,
+    images,
     attachments: product.attachments ?? [],
     model3d: product.model3d ?? null,
   }
@@ -144,10 +170,12 @@ export async function getProductById(id: string) {
 }
 
 export async function saveProduct(product: Product) {
+  const normalizedProduct = normalizeProduct(product)
+
   if (!isNativePlatform) {
     const products = await loadWebProducts()
-    const nextProducts = products.filter((item) => item.id !== product.id)
-    nextProducts.push(product)
+    const nextProducts = products.filter((item) => item.id !== normalizedProduct.id)
+    nextProducts.push(normalizedProduct)
     await saveWebProducts(sortProducts(nextProducts))
     return
   }
@@ -156,20 +184,21 @@ export async function saveProduct(product: Product) {
   await db!.run(
     `INSERT OR REPLACE INTO products (
       id, name, price, description, supplier_name, supplier_phone,
-      image_json, attachments_json, model_3d_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      image_json, images_json, attachments_json, model_3d_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      product.id,
-      product.name,
-      product.price,
-      product.description,
-      product.supplierName,
-      product.supplierPhone,
-      product.image ? JSON.stringify(product.image) : null,
-      JSON.stringify(product.attachments),
-      product.model3d ? JSON.stringify(product.model3d) : null,
-      product.createdAt,
-      product.updatedAt,
+      normalizedProduct.id,
+      normalizedProduct.name,
+      normalizedProduct.price,
+      normalizedProduct.description,
+      normalizedProduct.supplierName,
+      normalizedProduct.supplierPhone,
+      getPrimaryProductImage(normalizedProduct) ? JSON.stringify(getPrimaryProductImage(normalizedProduct)) : null,
+      JSON.stringify(normalizedProduct.images),
+      JSON.stringify(normalizedProduct.attachments),
+      normalizedProduct.model3d ? JSON.stringify(normalizedProduct.model3d) : null,
+      normalizedProduct.createdAt,
+      normalizedProduct.updatedAt,
     ],
   )
 }
@@ -187,7 +216,7 @@ export async function deleteProduct(id: string) {
 
 export async function replaceAllProducts(products: Product[]) {
   if (!isNativePlatform) {
-    await saveWebProducts(sortProducts(products))
+    await saveWebProducts(sortProducts(products.map((product) => normalizeProduct(product))))
     return
   }
 
@@ -196,7 +225,7 @@ export async function replaceAllProducts(products: Product[]) {
   await db!.execute('DELETE FROM product_visual_index')
 
   for (const product of sortProducts(products)) {
-    await saveProduct(product)
+    await saveProduct(normalizeProduct(product))
   }
 }
 

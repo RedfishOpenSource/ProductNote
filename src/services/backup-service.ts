@@ -1,8 +1,12 @@
-import type { BackupPayload, Product, ProductBackup } from '../types/product'
+import { getPrimaryProductImage, normalizeProductImages } from '../types/product'
+import type { BackupFile, BackupPayload, Product, ProductBackup } from '../types/product'
 import { exportBackupText, exportStoredFile, restoreBackupFile } from './file-service'
 import { replaceAllProducts } from './product-store'
 
-type LegacyProductBackup = Omit<ProductBackup, 'model3d'>
+type LegacyProductBackup = Omit<ProductBackup, 'images' | 'model3d'> & {
+  images?: BackupFile[]
+  model3d?: ProductBackup['model3d']
+}
 
 type ParsedBackupPayload = {
   version?: number
@@ -42,16 +46,20 @@ export async function exportProducts(products: Product[]): Promise<string> {
   const backupProducts: ProductBackup[] = []
 
   for (const product of products) {
+    const primaryImage = getPrimaryProductImage(product)
+    const images = normalizeProductImages(primaryImage, product.images)
+
     backupProducts.push({
       ...product,
-      image: product.image ? await exportStoredFile(product.image) : null,
+      image: primaryImage ? await exportStoredFile(primaryImage) : null,
+      images: await Promise.all(images.map((file) => exportStoredFile(file))),
       attachments: await Promise.all(product.attachments.map((file) => exportStoredFile(file))),
       model3d: await exportModel3d(product.model3d),
     })
   }
 
   const payload: BackupPayload = {
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     products: backupProducts,
   }
@@ -63,18 +71,24 @@ export async function exportProducts(products: Product[]): Promise<string> {
 export async function importProducts(content: string): Promise<number> {
   const parsed = JSON.parse(content) as ParsedBackupPayload
 
-  if ((parsed.version !== 1 && parsed.version !== 2) || !Array.isArray(parsed.products)) {
+  if ((parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3) || !Array.isArray(parsed.products)) {
     throw new Error('备份文件格式不正确')
   }
 
   const importedProducts: Product[] = []
 
   for (const product of parsed.products) {
-    const model3d = await restoreModel3d('model3d' in product ? product.model3d : null)
+    const model3d = await restoreModel3d('model3d' in product ? product.model3d ?? null : null)
+    const image = product.image ? await restoreBackupFile(product.image) : null
+    const images =
+      'images' in product && Array.isArray(product.images)
+        ? await Promise.all(product.images.map((file) => restoreBackupFile(file)))
+        : normalizeProductImages(image, undefined)
 
     importedProducts.push({
       ...product,
-      image: product.image ? await restoreBackupFile(product.image) : null,
+      image: image ?? images[0] ?? null,
+      images,
       attachments: await Promise.all(product.attachments.map((file) => restoreBackupFile(file))),
       model3d,
     })

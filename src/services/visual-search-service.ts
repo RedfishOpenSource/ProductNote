@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
+import { getPrimaryProductImage } from '../types/product'
 import type { Product, StoredFile } from '../types/product'
 import type {
   ProductVisualIndex,
@@ -207,12 +208,12 @@ async function searchProductsByFallback(file: StoredFile, products: Product[]): 
   }
 
   const querySignature = await getFallbackSignature(file)
-  const productsWithImages = products.filter(
-    (product): product is Product & { image: StoredFile } => Boolean(product.image),
-  )
+  const productsWithImages = products
+    .map((product) => ({ product, image: getPrimaryProductImage(product) }))
+    .filter((item): item is { product: Product; image: StoredFile } => Boolean(item.image))
   const results = await Promise.all(
-    productsWithImages.map(async (product) => {
-      const signature = await getFallbackSignature(product.image)
+    productsWithImages.map(async ({ product, image }) => {
+      const signature = await getFallbackSignature(image)
       const score = calculateFallbackSimilarity(querySignature, signature)
       return {
         productId: product.id,
@@ -250,15 +251,17 @@ export async function getVisualModelInfo(): Promise<VisualModelInfo> {
 export async function upsertProductVisualIndex(product: Product): Promise<void> {
   if (!hasNativeVisualSearch()) return
 
-  if (!product.image) {
+  const image = getPrimaryProductImage(product)
+
+  if (!image) {
     await deleteProductVisualIndex(product.id)
     return
   }
 
-  const extracted = await extractLabelsFromStoredFile(product.image)
+  const extracted = await extractLabelsFromStoredFile(image)
   const index: ProductVisualIndex = {
     productId: product.id,
-    imagePath: product.image.path,
+    imagePath: image.path,
     labels: extracted.labels,
     modelId: extracted.modelId,
     indexedAt: new Date().toISOString(),
@@ -284,7 +287,9 @@ export async function ensureVisualIndexes(products: Product[]): Promise<number> 
     let changedCount = 0
 
     for (const product of products) {
-      if (!product.image) {
+      const image = getPrimaryProductImage(product)
+
+      if (!image) {
         if (indexMap.has(product.id)) {
           await deleteProductVisualIndex(product.id)
           changedCount += 1
@@ -295,7 +300,7 @@ export async function ensureVisualIndexes(products: Product[]): Promise<number> 
       const currentIndex = indexMap.get(product.id)
       const needsReindex =
         !currentIndex ||
-        currentIndex.imagePath !== product.image.path ||
+        currentIndex.imagePath !== image.path ||
         currentIndex.modelId !== model.modelId ||
         currentIndex.labels.length === 0
 

@@ -140,9 +140,6 @@
                   <el-tag v-if="productHasVideo(product)" class="meta-tag" effect="plain" round type="danger">
                     <span>含视频</span>
                   </el-tag>
-                  <el-tag v-if="product.model3d" class="meta-tag" effect="plain" round type="success">
-                    <span>3D</span>
-                  </el-tag>
                 </div>
               </div>
             </div>
@@ -168,7 +165,6 @@
                 <el-icon><VideoCamera /></el-icon>
                 视频
               </span>
-              <span v-if="product.model3d" class="feed-model-badge">3D</span>
             </div>
 
             <div class="feed-body">
@@ -228,14 +224,10 @@
         <span class="settings-swipe-handle" aria-hidden="true" />
         <div class="create-entry-head">
           <h2>新增商品</h2>
-          <p>可先带图进入表单，也可点按拍照、长按拍视频，或直接语音预填。</p>
+          <p>可使用相机快速录入，也可直接语音预填。</p>
         </div>
 
         <div class="create-entry-grid">
-          <button class="create-entry-card" type="button" @click="openCreateAlbumPicker">
-            <strong>从相册选择</strong>
-            <span>选一张商品图片后继续编辑</span>
-          </button>
           <button
             class="create-entry-card"
             type="button"
@@ -251,10 +243,6 @@
           >
             <strong>相机</strong>
             <span>点按拍照，长按拍视频</span>
-          </button>
-          <button class="create-entry-card" type="button" @click="startTextCreate">
-            <strong>写文字</strong>
-            <span>直接打开空白表单</span>
           </button>
           <button class="create-entry-card" type="button" :disabled="createEntryBusy" @click="startAiCreate">
             <strong>{{ createEntryBusy ? '识别中...' : 'AI 录入' }}</strong>
@@ -277,13 +265,6 @@
       class="hidden-input"
       type="file"
       @change="handlePhotoSearchFileSelected"
-    />
-    <input
-      ref="createAlbumInput"
-      accept="image/*"
-      class="hidden-input"
-      type="file"
-      @change="handleCreateAlbumSelected"
     />
     <input
       ref="createPhotoCaptureInput"
@@ -348,7 +329,7 @@ import {
   isVisualSearchSupported,
   searchProductsByStoredFile,
 } from '../services/visual-search-service'
-import { isVideoStoredFile } from '../types/product'
+import { getPrimaryProductImage, isVideoStoredFile } from '../types/product'
 import type { Product, StoredFile, ViewMode } from '../types/product'
 import type { VisualSearchResult } from '../types/visual-search'
 
@@ -368,7 +349,6 @@ const searchHistory = ref<string[]>([])
 const imageMap = ref<Record<string, string>>({})
 const importInput = ref<HTMLInputElement | null>(null)
 const photoSearchInput = ref<HTMLInputElement | null>(null)
-const createAlbumInput = ref<HTMLInputElement | null>(null)
 const createPhotoCaptureInput = ref<HTMLInputElement | null>(null)
 const createVideoCaptureInput = ref<HTMLInputElement | null>(null)
 const searchInput = ref<SearchInputHandle | null>(null)
@@ -458,7 +438,7 @@ function productHasVideo(product: Product): boolean {
 async function refreshImages(): Promise<void> {
   const entries = await Promise.all(
     products.value.map(async (product) => {
-      return [product.id, await resolveFileUrl(product.image)] as const
+      return [product.id, await resolveFileUrl(getPrimaryProductImage(product))] as const
     }),
   )
 
@@ -549,10 +529,6 @@ function consumeSelectedFile(event: Event): File | null {
   return file
 }
 
-function openCreateAlbumPicker(): void {
-  openFileInput(createAlbumInput.value)
-}
-
 async function saveCapturedPhoto(webPath: string, format?: string): Promise<StoredFile> {
   const response = await fetch(webPath)
   const blob = await response.blob()
@@ -580,7 +556,7 @@ async function openCreatePhotoCapture(): Promise<void> {
     }
 
     const image = await saveCapturedPhoto(photo.webPath, photo.format)
-    startCreateWithDraft({ image })
+    startCreateWithDraft({ image, images: [image] })
   } catch (error) {
     console.error(error)
     showToast('拍照新建失败，请稍后重试', 'danger')
@@ -738,18 +714,11 @@ async function createVideoCoverBlob(file: File): Promise<Blob> {
 async function startCreateFromImageFile(file: File, failureMessage: string): Promise<void> {
   try {
     const image = await saveFile(file, 'image')
-    startCreateWithDraft({ image })
+    startCreateWithDraft({ image, images: [image] })
   } catch (error) {
     console.error(error)
     showToast(failureMessage, 'danger')
   }
-}
-
-async function handleCreateAlbumSelected(event: Event): Promise<void> {
-  const file = consumeSelectedFile(event)
-  if (!file) return
-
-  await startCreateFromImageFile(file, '带图新建失败，请稍后重试')
 }
 
 async function handleCreatePhotoCaptured(event: Event): Promise<void> {
@@ -770,6 +739,7 @@ async function handleCreateVideoCaptured(event: Event): Promise<void> {
     const image = await savePhotoBlob(coverBlob, 'image/jpeg')
     startCreateWithDraft({
       image,
+      images: [image],
       attachments: [videoAttachment],
     })
   } catch (error) {
@@ -778,10 +748,6 @@ async function handleCreateVideoCaptured(event: Event): Promise<void> {
   } finally {
     createEntryBusy.value = false
   }
-}
-
-function startTextCreate(): void {
-  startCreateWithDraft(null)
 }
 
 async function startAiCreate(): Promise<void> {
@@ -1538,8 +1504,7 @@ onMounted(async () => {
 }
 
 .feed-match-badge,
-.feed-video-badge,
-.feed-model-badge {
+.feed-video-badge {
   position: absolute;
   top: 10px;
 }
@@ -1558,18 +1523,6 @@ onMounted(async () => {
   background: rgba(31, 45, 61, 0.62);
   color: #ffffff;
   font-size: 12px;
-}
-
-.feed-model-badge {
-  top: auto;
-  left: 10px;
-  bottom: 10px;
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: rgba(28, 130, 98, 0.84);
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 600;
 }
 
 .feed-body {

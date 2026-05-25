@@ -46,6 +46,7 @@ export interface Product {
   supplierName: string
   supplierPhone: string
   image: StoredFile | null
+  images: StoredFile[]
   attachments: StoredFile[]
   model3d: ProductModel3D | null
   createdAt: string
@@ -68,14 +69,27 @@ export function isModelStoredFile(file: StoredFile): boolean {
   return file.kind === 'model' || isModelMimeType(file.mimeType) || hasModelFileExtension(file.name)
 }
 
-export interface ProductBackup extends Omit<Product, 'image' | 'attachments' | 'model3d'> {
+export function normalizeProductImages(image: StoredFile | null | undefined, images: StoredFile[] | undefined): StoredFile[] {
+  if (Array.isArray(images) && images.length > 0) {
+    return images
+  }
+
+  return image ? [image] : []
+}
+
+export function getPrimaryProductImage(product: Pick<Product, 'image' | 'images'>): StoredFile | null {
+  return product.images[0] ?? product.image ?? null
+}
+
+export interface ProductBackup extends Omit<Product, 'image' | 'images' | 'attachments' | 'model3d'> {
   image: BackupFile | null
+  images: BackupFile[]
   attachments: BackupFile[]
   model3d: ProductModel3DBackup | null
 }
 
 export interface BackupPayload {
-  version: 2
+  version: 3
   exportedAt: string
   products: ProductBackup[]
 }

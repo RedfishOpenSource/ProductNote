@@ -48,11 +48,15 @@
           <section class="panel-card form-section compact-card">
             <div class="section-heading compact-heading">
               <h2>商品图片</h2>
-              <p>列表展示、新建入口带图和 3D 建模都优先用这里。</p>
+              <p>可添加多张图片，列表和搜索默认使用第一张。</p>
             </div>
 
-            <div v-if="imagePreview" class="preview-box compact-preview-box">
-              <img :src="imagePreview" alt="商品图片" class="preview-image" />
+            <div v-if="imagePreviews.length > 0" class="image-preview-grid compact-preview-box">
+              <div v-for="(preview, index) in imagePreviews" :key="preview.file.path" class="image-preview-card">
+                <img :src="preview.url" alt="商品图片" class="preview-image" />
+                <span v-if="index === 0" class="cover-badge">封面</span>
+                <el-button class="image-remove-button" link type="danger" @click="removeProductImage(preview.file)">删除</el-button>
+              </div>
             </div>
             <div v-else class="preview-empty compact-preview-empty">
               <el-icon><Picture /></el-icon>
@@ -109,53 +113,6 @@
 
           <section class="panel-card form-section compact-card">
             <div class="section-heading compact-heading">
-              <h2>3D 模型</h2>
-              <p>本地离线生成单个 GLB 模型，支持图片或短视频建模。</p>
-            </div>
-
-            <div v-if="modelPreviewUrl" class="model-preview-box">
-              <ProductModelViewer :src="modelPreviewUrl" />
-            </div>
-            <div v-else class="preview-empty compact-preview-empty model-empty">
-              <el-icon><Box /></el-icon>
-              <span>还没有生成 3D 模型</span>
-            </div>
-
-            <div v-if="form.model3d" class="model-meta-row">
-              <span>{{ form.model3d.file.name }}</span>
-              <span>{{ form.model3d.sourceType === 'video' ? '短视频建模' : '多图建模' }}</span>
-            </div>
-
-            <div class="source-summary">
-              <strong>当前建模来源：</strong>
-              <span>{{ modelSourceSummary }}</span>
-            </div>
-
-            <div class="media-button-grid compact-button-grid">
-              <el-button @click="pickModelSourceImages">
-                <el-icon><Picture /></el-icon>
-                选择建模图片
-              </el-button>
-              <el-button @click="pickModelSourceVideo">
-                <el-icon><VideoCamera /></el-icon>
-                选择建模视频
-              </el-button>
-            </div>
-
-            <div class="media-button-grid compact-button-grid model-action-grid">
-              <el-button type="primary" :loading="generatingModel" @click="generateModel3d">
-                {{ generatingModel ? '生成中...' : form.model3d ? '重新生成 3D' : '生成 3D 模型' }}
-              </el-button>
-              <el-button v-if="form.model3d" plain @click="removeModel3d">删除模型</el-button>
-            </div>
-
-            <div v-if="form.model3d && isEditMode" class="model-link-row">
-              <el-button link type="primary" @click="goModelPage">进入 3D 查看页</el-button>
-            </div>
-          </section>
-
-          <section class="panel-card form-section compact-card">
-            <div class="section-heading compact-heading">
               <h2>附件</h2>
               <p>可保存票据、说明书等其他文件。</p>
             </div>
@@ -207,7 +164,7 @@
       </div>
     </div>
 
-    <input ref="imageInput" accept="image/*" class="hidden-input" type="file" @change="handleImageSelected" />
+    <input ref="imageInput" accept="image/*" class="hidden-input" multiple type="file" @change="handleImagesSelected" />
     <input ref="videoInput" accept="video/*" class="hidden-input" multiple type="file" @change="handleVideosSelected" />
     <input
       ref="videoCaptureInput"
@@ -218,27 +175,23 @@
       @change="handleVideosSelected"
     />
     <input ref="attachmentInput" class="hidden-input" multiple type="file" @change="handleAttachmentsSelected" />
-    <input ref="modelImageSourceInput" accept="image/*" class="hidden-input" multiple type="file" @change="handleModelSourceImagesSelected" />
-    <input ref="modelVideoSourceInput" accept="video/*" class="hidden-input" type="file" @change="handleModelSourceVideoSelected" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { Back, Box, Camera, Paperclip, Picture, VideoCamera } from '@element-plus/icons-vue'
+import { Back, Camera, Paperclip, Picture, VideoCamera } from '@element-plus/icons-vue'
 import { Camera as CapacitorCamera, CameraResultType, CameraSource } from '@capacitor/camera'
 import { Capacitor } from '@capacitor/core'
 import { ElMessage } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import ProductModelViewer from '../components/ProductModelViewer.vue'
 import { consumePendingProductCreateDraft } from '../services/product-create-draft'
-import { deleteStoredFile, openStoredFile, resolveFileUrl, saveBlobFile, saveFile, savePhotoBlob } from '../services/file-service'
+import { deleteStoredFile, openStoredFile, resolveFileUrl, saveFile, savePhotoBlob } from '../services/file-service'
 import { createId } from '../services/id'
-import { generateProductModel } from '../services/model-reconstruction-service'
 import { deleteProduct, getProductById, saveProduct } from '../services/product-store'
 import { removeProductVisualIndex, upsertProductVisualIndex } from '../services/visual-search-service'
-import { hasVideoFileExtension, isVideoMimeType, isVideoStoredFile } from '../types/product'
-import type { Product, ProductModel3D, StoredFile } from '../types/product'
+import { getPrimaryProductImage, hasVideoFileExtension, isVideoMimeType, isVideoStoredFile, normalizeProductImages } from '../types/product'
+import type { Product, StoredFile } from '../types/product'
 
 const router = useRouter()
 const route = useRoute()
@@ -247,16 +200,10 @@ const imageInput = ref<HTMLInputElement | null>(null)
 const videoInput = ref<HTMLInputElement | null>(null)
 const videoCaptureInput = ref<HTMLInputElement | null>(null)
 const attachmentInput = ref<HTMLInputElement | null>(null)
-const modelImageSourceInput = ref<HTMLInputElement | null>(null)
-const modelVideoSourceInput = ref<HTMLInputElement | null>(null)
-const imagePreview = ref('')
-const modelPreviewUrl = ref('')
+const imagePreviews = ref<Array<{ file: StoredFile; url: string }>>([])
 const saving = ref(false)
-const generatingModel = ref(false)
 const createdAt = ref('')
 const removedFiles = ref<StoredFile[]>([])
-const modelSourceImages = ref<File[]>([])
-const modelSourceVideo = ref<File | null>(null)
 const isWebPlatform = Capacitor.getPlatform() === 'web'
 
 const form = reactive({
@@ -266,8 +213,9 @@ const form = reactive({
   supplierName: '',
   supplierPhone: '',
   image: null as StoredFile | null,
+  images: [] as StoredFile[],
   attachments: [] as StoredFile[],
-  model3d: null as ProductModel3D | null,
+  model3d: null as Product['model3d'],
 })
 
 const productId = computed(() => String(route.params.id ?? ''))
@@ -294,25 +242,6 @@ const attachmentGroups = computed(() => {
 })
 const videoAttachments = computed(() => attachmentGroups.value.videos)
 const otherAttachments = computed(() => attachmentGroups.value.others)
-const modelSourceSummary = computed(() => {
-  if (modelSourceVideo.value) {
-    return `已选短视频：${modelSourceVideo.value.name}`
-  }
-
-  if (modelSourceImages.value.length > 0) {
-    return `已选 ${modelSourceImages.value.length} 张建模图片`
-  }
-
-  if (videoAttachments.value.length > 0) {
-    return `将使用当前商品视频：${videoAttachments.value[0].name}`
-  }
-
-  if (form.image) {
-    return '将使用当前商品主图'
-  }
-
-  return '还没有可用于建模的图片或视频'
-})
 
 function showToast(message: string, color: 'success' | 'warning' | 'danger' = 'success') {
   const type = color === 'danger' ? 'error' : color
@@ -334,11 +263,6 @@ function goBack() {
   router.push('/')
 }
 
-function goModelPage(): void {
-  if (!productId.value) return
-  router.push(`/product/${productId.value}/model`)
-}
-
 function pickImage() {
   imageInput.value?.click()
 }
@@ -355,20 +279,17 @@ function pickAttachments() {
   attachmentInput.value?.click()
 }
 
-function pickModelSourceImages() {
-  modelImageSourceInput.value?.click()
+function syncPrimaryImage(): void {
+  form.image = form.images[0] ?? null
 }
 
-function pickModelSourceVideo() {
-  modelVideoSourceInput.value?.click()
-}
-
-async function refreshImagePreview() {
-  imagePreview.value = await resolveFileUrl(form.image)
-}
-
-async function refreshModelPreview() {
-  modelPreviewUrl.value = form.model3d ? await resolveFileUrl(form.model3d.file) : ''
+async function refreshImagePreviews() {
+  imagePreviews.value = await Promise.all(
+    form.images.map(async (file) => ({
+      file,
+      url: await resolveFileUrl(file),
+    })),
+  )
 }
 
 function applyCreateDraft(): void {
@@ -382,7 +303,8 @@ function applyCreateDraft(): void {
   form.description = draft.description ?? ''
   form.supplierName = draft.supplierName ?? ''
   form.supplierPhone = draft.supplierPhone ?? ''
-  form.image = draft.image ?? null
+  form.images = normalizeProductImages(draft.image, draft.images)
+  syncPrimaryImage()
   form.attachments = [...(draft.attachments ?? [])]
 }
 
@@ -392,7 +314,8 @@ function fillForm(product: Product) {
   form.description = product.description
   form.supplierName = product.supplierName
   form.supplierPhone = product.supplierPhone
-  form.image = product.image
+  form.images = normalizeProductImages(product.image, product.images)
+  syncPrimaryImage()
   form.attachments = [...product.attachments]
   form.model3d = product.model3d
   createdAt.value = product.createdAt
@@ -402,8 +325,7 @@ async function loadProduct() {
   if (!isEditMode.value) {
     createdAt.value = new Date().toISOString()
     applyCreateDraft()
-    await refreshImagePreview()
-    await refreshModelPreview()
+    await refreshImagePreviews()
     return
   }
 
@@ -415,24 +337,13 @@ async function loadProduct() {
   }
 
   fillForm(product)
-  await Promise.all([refreshImagePreview(), refreshModelPreview()])
+  await refreshImagePreviews()
 }
 
-async function replaceImage(file: StoredFile) {
-  if (form.image) {
-    removedFiles.value.push(form.image)
-  }
-  form.image = file
-  await refreshImagePreview()
-}
-
-async function replaceModel3d(nextModel: ProductModel3D) {
-  if (form.model3d) {
-    removedFiles.value.push(form.model3d.file)
-  }
-
-  form.model3d = nextModel
-  await refreshModelPreview()
+async function addProductImages(files: StoredFile[]) {
+  form.images.push(...files)
+  syncPrimaryImage()
+  await refreshImagePreviews()
 }
 
 async function addAttachmentFiles(files: File[]) {
@@ -455,22 +366,23 @@ async function takePhoto() {
     const blob = await response.blob()
     const mimeType = blob.type || (photo.format ? `image/${photo.format}` : 'image/jpeg')
     const storedFile = await savePhotoBlob(blob, mimeType)
-    await replaceImage(storedFile)
+    await addProductImages([storedFile])
   } catch (error) {
     console.error(error)
     showToast('拍照失败，请改用选择图片', 'warning')
   }
 }
 
-async function handleImageSelected(event: Event) {
+async function handleImagesSelected(event: Event) {
   const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
+  const files = Array.from(input.files ?? [])
   input.value = ''
 
-  if (!file) return
+  if (files.length === 0) return
 
-  const storedFile = await saveFile(file, 'image')
-  await replaceImage(storedFile)
+  const imageFiles = await Promise.all(files.map((file) => saveFile(file, 'image')))
+  await addProductImages(imageFiles)
+  showToast(`已添加 ${imageFiles.length} 张图片`)
 }
 
 async function handleVideosSelected(event: Event) {
@@ -533,6 +445,19 @@ function removeStoredFile(file: StoredFile) {
   }
 }
 
+async function removeProductImage(file: StoredFile) {
+  const index = form.images.indexOf(file)
+  if (index === -1) return
+
+  const [removed] = form.images.splice(index, 1)
+  if (removed) {
+    removedFiles.value.push(removed)
+  }
+
+  syncPrimaryImage()
+  await refreshImagePreviews()
+}
+
 async function previewStoredFile(file: StoredFile) {
   try {
     await openStoredFile(file)
@@ -551,98 +476,12 @@ function parsePrice() {
 }
 
 async function syncVisualIndex(product: Product) {
-  if (product.image) {
+  if (getPrimaryProductImage(product)) {
     await upsertProductVisualIndex(product)
     return
   }
 
   await removeProductVisualIndex(product.id)
-}
-
-async function handleModelSourceImagesSelected(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement
-  const files = Array.from(input.files ?? [])
-  input.value = ''
-
-  if (files.length === 0) return
-
-  modelSourceImages.value = files
-  modelSourceVideo.value = null
-  showToast(`已选择 ${files.length} 张建模图片`)
-}
-
-async function handleModelSourceVideoSelected(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0] ?? null
-  input.value = ''
-
-  if (!file) return
-
-  modelSourceVideo.value = file
-  modelSourceImages.value = []
-  showToast(`已选择建模视频：${file.name}`)
-}
-
-async function buildModelGenerationInput() {
-  if (modelSourceVideo.value) {
-    return {
-      videoFile: modelSourceVideo.value,
-    }
-  }
-
-  if (modelSourceImages.value.length > 0) {
-    return {
-      imageFiles: [...modelSourceImages.value],
-    }
-  }
-
-  if (videoAttachments.value.length > 0) {
-    return {
-      videoUrl: await resolveFileUrl(videoAttachments.value[0]),
-    }
-  }
-
-  if (form.image) {
-    return {
-      imageUrls: [await resolveFileUrl(form.image)],
-    }
-  }
-
-  throw new Error('请先准备建模图片或短视频')
-}
-
-async function generateModel3d(): Promise<void> {
-  generatingModel.value = true
-
-  try {
-    const input = await buildModelGenerationInput()
-    const generated = await generateProductModel(input)
-    const storedFile = await saveBlobFile(generated.blob, generated.fileName, 'model/gltf-binary', 'model')
-
-    await replaceModel3d({
-      file: storedFile,
-      sourceType: generated.sourceType,
-      generatedAt: new Date().toISOString(),
-      engineId: generated.engineId,
-      sourceCount: generated.sourceCount,
-    })
-
-    showToast('3D 模型已生成')
-  } catch (error) {
-    console.error(error)
-    showToast(error instanceof Error ? error.message : '3D 模型生成失败', 'danger')
-  } finally {
-    generatingModel.value = false
-  }
-}
-
-async function removeModel3d(): Promise<void> {
-  if (!form.model3d) return
-
-  removedFiles.value.push(form.model3d.file)
-  form.model3d = null
-  modelPreviewUrl.value = ''
-  showToast('已移除 3D 模型')
 }
 
 async function saveCurrentProduct() {
@@ -667,7 +506,8 @@ async function saveCurrentProduct() {
       description: form.description.trim(),
       supplierName: form.supplierName.trim(),
       supplierPhone: form.supplierPhone.trim(),
-      image: form.image,
+      image: form.images[0] ?? null,
+      images: [...form.images],
       attachments: [...form.attachments],
       model3d: form.model3d,
       createdAt: createdAt.value || now,
@@ -706,8 +546,13 @@ async function deleteCurrentProduct() {
   if (!confirmed) return
 
   try {
-    await deleteStoredFile(form.image)
+    for (const file of form.images) {
+      await deleteStoredFile(file)
+    }
     for (const file of form.attachments) {
+      await deleteStoredFile(file)
+    }
+    for (const file of removedFiles.value) {
       await deleteStoredFile(file)
     }
     await deleteStoredFile(form.model3d?.file ?? null)
@@ -869,12 +714,46 @@ onMounted(async () => {
   margin-bottom: 10px;
 }
 
+.image-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.image-preview-card {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #f5f7fa;
+}
+
 .preview-image {
   width: 100%;
-  min-height: 150px;
-  max-height: 220px;
+  aspect-ratio: 4 / 3;
   object-fit: cover;
-  border-radius: 16px;
+  border-radius: 14px;
+}
+
+.cover-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(17, 19, 24, 0.68);
+  color: #ffffff;
+  font-size: 11px;
+}
+
+.image-remove-button {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .preview-empty {
@@ -894,8 +773,7 @@ onMounted(async () => {
   font-size: 34px;
 }
 
-.video-empty,
-.model-empty {
+.video-empty {
   min-height: 120px;
 }
 
@@ -974,30 +852,6 @@ onMounted(async () => {
   font-size: 12px;
 }
 
-.model-preview-box {
-  margin-bottom: 10px;
-}
-
-.model-meta-row,
-.source-summary,
-.model-link-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
-  font-size: 12px;
-}
-
-.source-summary {
-  color: var(--app-text-secondary);
-}
-
-.model-action-grid {
-  margin-top: 10px;
-}
-
 .action-stack {
   display: grid;
   gap: 10px;
@@ -1014,6 +868,7 @@ onMounted(async () => {
 
 @media (max-width: 640px) {
   .field-grid,
+  .image-preview-grid,
   .media-button-grid {
     grid-template-columns: 1fr;
   }

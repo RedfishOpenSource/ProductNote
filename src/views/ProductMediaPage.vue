@@ -139,7 +139,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { resolveFileUrl } from '../services/file-service'
 import { formatPrice } from '../services/product-format'
 import { getProductById } from '../services/product-store'
-import { isVideoStoredFile } from '../types/product'
+import { getPrimaryProductImage, isVideoStoredFile } from '../types/product'
 import type { Product, StoredFile } from '../types/product'
 
 const route = useRoute()
@@ -322,7 +322,7 @@ function resolvePrimaryMedia(currentProduct: Product): StoredFile | null {
   }
 
   activeMediaType.value = 'image'
-  return currentProduct.image ?? null
+  return getPrimaryProductImage(currentProduct)
 }
 
 async function loadProduct(): Promise<void> {
