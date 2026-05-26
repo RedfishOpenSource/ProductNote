@@ -224,7 +224,7 @@
         <span class="settings-swipe-handle" aria-hidden="true" />
         <div class="create-entry-head">
           <h2>新增商品</h2>
-          <p>可使用相机快速录入，也可直接语音预填。</p>
+          <p>可使用相机快速录入，也可直接手动填写表单。</p>
         </div>
 
         <div class="create-entry-grid">
@@ -244,9 +244,9 @@
             <strong>相机</strong>
             <span>点按拍照，长按拍视频</span>
           </button>
-          <button class="create-entry-card" type="button" :disabled="createEntryBusy" @click="startAiCreate">
-            <strong>{{ createEntryBusy ? '识别中...' : 'AI 录入' }}</strong>
-            <span>语音转文字并预填字段</span>
+          <button class="create-entry-card" type="button" :disabled="createEntryBusy" @click="startManualCreate">
+            <strong>手动</strong>
+            <span>直接打开新增表单页面</span>
           </button>
         </div>
       </div>
@@ -310,8 +310,6 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { exportProducts, importProducts } from '../services/backup-service'
 import { deleteStoredFile, readImportFile, resolveFileUrl, saveFile, savePhotoBlob } from '../services/file-service'
-import { buildDraftFromSpeechText } from '../services/local-ai-entry-service'
-import { isOfflineSpeechSupported, startOfflineSpeechRecognition } from '../services/offline-speech-service'
 import { clearPendingProductCreateDraft, setPendingProductCreateDraft } from '../services/product-create-draft'
 import type { ProductCreateDraft } from '../services/product-create-draft'
 import { formatPrice } from '../services/product-format'
@@ -512,6 +510,10 @@ function startCreateWithDraft(draft: ProductCreateDraft | null = null): void {
 
   closeCreateEntry()
   router.push('/product/new')
+}
+
+function startManualCreate(): void {
+  startCreateWithDraft()
 }
 
 function openFileInput(input: HTMLInputElement | null): void {
@@ -745,27 +747,6 @@ async function handleCreateVideoCaptured(event: Event): Promise<void> {
   } catch (error) {
     console.error(error)
     showToast('拍视频新建失败，请稍后重试', 'danger')
-  } finally {
-    createEntryBusy.value = false
-  }
-}
-
-async function startAiCreate(): Promise<void> {
-  if (!isOfflineSpeechSupported()) {
-    showToast('当前环境暂不支持语音录入', 'warning')
-    return
-  }
-
-  createEntryBusy.value = true
-  showToast('请开始说话，系统会自动预填商品信息')
-
-  try {
-    const result = await startOfflineSpeechRecognition('请说出商品名称、价格、描述和供应商信息')
-    startCreateWithDraft(buildDraftFromSpeechText(result.text))
-    showToast('已根据语音内容预填表单')
-  } catch (error) {
-    console.error(error)
-    showToast(error instanceof Error ? error.message : 'AI 录入失败，请稍后重试', 'warning')
   } finally {
     createEntryBusy.value = false
   }

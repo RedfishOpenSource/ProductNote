@@ -1,5 +1,5 @@
 <template>
-  <div :class="['page-shell', 'media-page', { 'media-page-video': showVideoPlayer }]">
+  <div class="page-shell media-page">
     <section v-if="loading" class="panel-card media-state">
       <el-icon class="is-loading media-state-icon"><Loading /></el-icon>
       <span>正在读取商品媒体...</span>
@@ -11,87 +11,6 @@
       <el-button type="primary" @click="goHome">返回列表</el-button>
     </section>
 
-    <section v-else-if="showVideoPlayer" class="video-player-shell">
-      <video
-        :src="activeMediaUrl"
-        class="fullscreen-video"
-        controls
-        autoplay
-        playsinline
-        preload="auto"
-        webkit-playsinline="true"
-      />
-
-      <button class="overlay-back-button" type="button" aria-label="返回上一页" @click="goBack">
-        <el-icon><Back /></el-icon>
-      </button>
-
-      <section
-        class="video-detail-preview"
-        @click="openDetailSheet"
-        @touchcancel="handlePreviewTouchEnd"
-        @touchend="handlePreviewTouchEnd"
-        @touchmove="handlePreviewTouchMove"
-        @touchstart="handlePreviewTouchStart"
-      >
-        <div class="video-detail-preview-content">
-          <div class="video-detail-heading">
-            <span>{{ product.name }}</span>
-            <span class="video-detail-price">{{ formatPrice(product.price) }}</span>
-          </div>
-          <p class="video-detail-description">{{ productDescription }}</p>
-          <div class="video-detail-footer">
-            <span class="video-detail-supplier">{{ productSupplierName }}</span>
-            <button class="video-detail-action" type="button" @click.stop="openDetailSheet">查看详情</button>
-          </div>
-        </div>
-      </section>
-
-      <button v-if="detailSheetOpen" class="detail-sheet-backdrop" type="button" aria-label="关闭详情" @click="closeDetailSheet" />
-
-      <section :class="['detail-sheet', { 'is-open': detailSheetOpen, 'is-dragging': detailSheetDragging }]" :style="detailSheetStyle">
-        <div
-          class="detail-sheet-header"
-          @touchcancel="handleDetailSheetTouchEnd"
-          @touchend="handleDetailSheetTouchEnd"
-          @touchmove="handleDetailSheetTouchMove"
-          @touchstart="handleDetailSheetTouchStart"
-        >
-          <span class="detail-sheet-handle" aria-hidden="true" />
-          <div class="detail-sheet-hero">
-            <span class="detail-sheet-tag">商品详情</span>
-            <div class="detail-sheet-title-row">
-              <h2>{{ product.name }}</h2>
-              <p>{{ formatPrice(product.price) }}</p>
-            </div>
-            <span class="detail-sheet-subtitle">{{ productSupplierName }}</span>
-          </div>
-        </div>
-
-        <div class="detail-sheet-body">
-          <section class="detail-sheet-section">
-            <h3>商品描述</h3>
-            <p class="detail-sheet-description">{{ productDescription }}</p>
-          </section>
-          <div class="detail-sheet-meta">
-            <div>
-              <span>供应商</span>
-              <strong>{{ productSupplierName }}</strong>
-            </div>
-            <div>
-              <span>联系电话</span>
-              <strong>{{ productSupplierPhone }}</strong>
-            </div>
-            <div>
-              <span>附件数量</span>
-              <strong>{{ attachmentCountLabel }}</strong>
-            </div>
-          </div>
-          <el-button plain @click="goDetail">进入完整详情页</el-button>
-        </div>
-      </section>
-    </section>
-
     <template v-else>
       <header class="media-header panel-card">
         <button class="header-back-button" type="button" aria-label="返回上一页" @click="goBack">
@@ -100,14 +19,22 @@
 
         <div class="header-copy">
           <h1>{{ product.name }}</h1>
-          <p>图片展示</p>
+          <p>{{ mediaSummary }}</p>
         </div>
 
         <el-button type="primary" plain @click="goDetail">查看详情</el-button>
       </header>
 
-      <section v-if="activeMediaUrl" class="panel-card media-stage">
-        <img :src="activeMediaUrl" class="media-view" alt="商品图片" />
+      <section v-if="mediaItems.length > 0" class="panel-card media-stage">
+        <SwipeCarousel :items="mediaItems" aria-label="商品媒体轮播">
+          <template #default="{ item }">
+            <div class="media-slide">
+              <img v-if="item.type === 'image'" :src="item.url" class="media-view" alt="商品图片" />
+              <video v-else :src="item.url" class="media-view media-video" controls playsinline preload="metadata" />
+              <span class="media-type-badge">{{ item.type === 'video' ? '视频' : '图片' }}</span>
+            </div>
+          </template>
+        </SwipeCarousel>
       </section>
 
       <section v-else class="panel-card media-state">
@@ -117,15 +44,23 @@
       </section>
 
       <section class="panel-card media-info">
-        <div>
-          <p class="info-label">商品名称</p>
-          <h2>{{ product.name }}</h2>
+        <div class="info-head">
+          <div>
+            <p class="info-label">商品名称</p>
+            <h2>{{ product.name }}</h2>
+          </div>
+          <strong class="info-price">{{ formatPrice(product.price) }}</strong>
         </div>
+
         <p class="info-description">{{ productDescription }}</p>
-        <div class="info-meta">
-          <span>{{ productSupplierName }}</span>
-          <span>{{ productSupplierPhone }}</span>
+
+        <div class="info-chip-row">
+          <span class="info-chip">{{ productSupplierName }}</span>
+          <span class="info-chip">{{ productSupplierPhone }}</span>
+          <span class="info-chip">{{ mediaSummary }}</span>
+          <span class="info-chip">{{ attachmentCountLabel }}</span>
         </div>
+
         <el-button type="primary" @click="goDetail">进入详情页</el-button>
       </section>
     </template>
@@ -136,44 +71,51 @@
 import { Back, Loading, Picture } from '@element-plus/icons-vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import SwipeCarousel from '../components/SwipeCarousel.vue'
 import { resolveFileUrl } from '../services/file-service'
 import { formatPrice } from '../services/product-format'
 import { getProductById } from '../services/product-store'
-import { getPrimaryProductImage, isVideoStoredFile } from '../types/product'
+import { isVideoStoredFile } from '../types/product'
 import type { Product, StoredFile } from '../types/product'
+
+type MediaItem = {
+  key: string
+  type: 'image' | 'video'
+  file: StoredFile
+  url: string
+}
 
 const route = useRoute()
 const router = useRouter()
 
 const loading = ref(true)
 const product = ref<Product | null>(null)
-const activeMediaType = ref<'image' | 'video'>('image')
-const activeMediaUrl = ref('')
-const detailSheetOpen = ref(false)
-const detailSheetDragging = ref(false)
-const detailSheetDragOffsetY = ref(0)
-const detailSheetGestureAxis = ref<'x' | 'y' | null>(null)
-const detailSheetGestureStartX = ref(0)
-const detailSheetGestureStartY = ref(0)
-const previewGestureAxis = ref<'x' | 'y' | null>(null)
-const previewGestureStartX = ref(0)
-const previewGestureStartY = ref(0)
-
-const gestureAxisThreshold = 8
-const previewOpenThreshold = 32
-const detailSheetDismissThreshold = 120
-const detailSheetMaxDragOffset = 420
+const mediaItems = ref<MediaItem[]>([])
 
 const productId = computed(() => String(route.params.id ?? ''))
-const showVideoPlayer = computed(() => activeMediaType.value === 'video' && Boolean(activeMediaUrl.value) && Boolean(product.value))
 const productDescription = computed(() => product.value?.description || '暂无商品描述')
 const productSupplierName = computed(() => product.value?.supplierName || '未填写供应商')
 const productSupplierPhone = computed(() => product.value?.supplierPhone || '未填写电话')
+const imageCount = computed(() => mediaItems.value.filter((item) => item.type === 'image').length)
+const videoCount = computed(() => mediaItems.value.filter((item) => item.type === 'video').length)
 const attachmentCountLabel = computed(() => `${product.value?.attachments.length ?? 0} 个附件`)
-const detailSheetStyle = computed(() => ({
-  '--detail-sheet-offset': `${detailSheetOpen.value ? detailSheetDragOffsetY.value : 100}%`,
-  '--detail-sheet-transition': detailSheetDragging.value ? 'none' : 'transform 220ms ease-out',
-}))
+const mediaSummary = computed(() => {
+  if (mediaItems.value.length === 0) {
+    return '暂无图片或视频'
+  }
+
+  const segments: string[] = []
+
+  if (videoCount.value > 0) {
+    segments.push(`${videoCount.value} 个视频`)
+  }
+
+  if (imageCount.value > 0) {
+    segments.push(`${imageCount.value} 张图片`)
+  }
+
+  return segments.join(' · ')
+})
 
 function goHome(): void {
   router.replace('/')
@@ -188,123 +130,6 @@ function goBack(): void {
   goHome()
 }
 
-function resetDetailSheetPosition(): void {
-  detailSheetDragging.value = false
-  detailSheetDragOffsetY.value = 0
-}
-
-function openDetailSheet(): void {
-  resetDetailSheetPosition()
-  detailSheetOpen.value = true
-}
-
-function closeDetailSheet(): void {
-  resetDetailSheetPosition()
-  detailSheetOpen.value = false
-}
-
-function resetDetailSheetGesture(): void {
-  detailSheetGestureAxis.value = null
-  resetDetailSheetPosition()
-}
-
-function resetPreviewGesture(): void {
-  previewGestureAxis.value = null
-}
-
-function resolveGestureAxis(deltaX: number, deltaY: number): 'x' | 'y' | null {
-  if (Math.abs(deltaX) < gestureAxisThreshold && Math.abs(deltaY) < gestureAxisThreshold) {
-    return null
-  }
-
-  return Math.abs(deltaX) > Math.abs(deltaY) ? 'x' : 'y'
-}
-
-function handlePreviewTouchStart(event: TouchEvent): void {
-  if (event.touches.length !== 1) {
-    resetPreviewGesture()
-    return
-  }
-
-  const touch = event.touches[0]
-  previewGestureStartX.value = touch.clientX
-  previewGestureStartY.value = touch.clientY
-  previewGestureAxis.value = null
-}
-
-function handlePreviewTouchMove(event: TouchEvent): void {
-  if (event.touches.length !== 1) {
-    return
-  }
-
-  const touch = event.touches[0]
-  const deltaX = touch.clientX - previewGestureStartX.value
-  const deltaY = touch.clientY - previewGestureStartY.value
-
-  if (!previewGestureAxis.value) {
-    previewGestureAxis.value = resolveGestureAxis(deltaX, deltaY)
-  }
-
-  if (previewGestureAxis.value === 'y' && deltaY < -previewOpenThreshold) {
-    openDetailSheet()
-    resetPreviewGesture()
-  }
-}
-
-function handlePreviewTouchEnd(): void {
-  resetPreviewGesture()
-}
-
-function handleDetailSheetTouchStart(event: TouchEvent): void {
-  if (!detailSheetOpen.value || event.touches.length !== 1) {
-    resetDetailSheetGesture()
-    return
-  }
-
-  const touch = event.touches[0]
-  detailSheetGestureStartX.value = touch.clientX
-  detailSheetGestureStartY.value = touch.clientY
-  detailSheetGestureAxis.value = null
-  detailSheetDragging.value = false
-}
-
-function handleDetailSheetTouchMove(event: TouchEvent): void {
-  if (!detailSheetOpen.value || event.touches.length !== 1) {
-    return
-  }
-
-  const touch = event.touches[0]
-  const deltaX = touch.clientX - detailSheetGestureStartX.value
-  const deltaY = touch.clientY - detailSheetGestureStartY.value
-
-  if (!detailSheetGestureAxis.value) {
-    detailSheetGestureAxis.value = resolveGestureAxis(deltaX, deltaY)
-  }
-
-  if (detailSheetGestureAxis.value !== 'y' || deltaY <= 0) {
-    return
-  }
-
-  event.preventDefault()
-  detailSheetDragging.value = true
-  detailSheetDragOffsetY.value = Math.min(deltaY, detailSheetMaxDragOffset)
-}
-
-function handleDetailSheetTouchEnd(): void {
-  if (!detailSheetDragging.value) {
-    resetDetailSheetGesture()
-    return
-  }
-
-  if (detailSheetDragOffsetY.value > detailSheetDismissThreshold) {
-    closeDetailSheet()
-    return
-  }
-
-  resetDetailSheetGesture()
-  detailSheetOpen.value = true
-}
-
 function goDetail(): void {
   if (!productId.value) {
     goHome()
@@ -314,32 +139,32 @@ function goDetail(): void {
   router.push(`/product/${productId.value}`)
 }
 
-function resolvePrimaryMedia(currentProduct: Product): StoredFile | null {
-  const firstVideo = currentProduct.attachments.find((file) => isVideoStoredFile(file))
-  if (firstVideo) {
-    activeMediaType.value = 'video'
-    return firstVideo
-  }
-
-  activeMediaType.value = 'image'
-  return getPrimaryProductImage(currentProduct)
+function buildMediaFiles(currentProduct: Product): StoredFile[] {
+  const videoFiles = currentProduct.attachments.filter((file) => isVideoStoredFile(file))
+  return [...videoFiles, ...currentProduct.images]
 }
 
 async function loadProduct(): Promise<void> {
   loading.value = true
-  closeDetailSheet()
 
   const currentProduct = await getProductById(productId.value)
   product.value = currentProduct
 
   if (!currentProduct) {
-    activeMediaUrl.value = ''
+    mediaItems.value = []
     loading.value = false
     return
   }
 
-  const primaryMedia = resolvePrimaryMedia(currentProduct)
-  activeMediaUrl.value = await resolveFileUrl(primaryMedia)
+  mediaItems.value = await Promise.all(
+    buildMediaFiles(currentProduct).map(async (file) => ({
+      key: file.path,
+      type: isVideoStoredFile(file) ? 'video' : 'image',
+      file,
+      url: await resolveFileUrl(file),
+    })),
+  )
+
   loading.value = false
 }
 
@@ -354,10 +179,6 @@ onMounted(async () => {
   gap: 14px;
 }
 
-.media-page-video {
-  gap: 0;
-}
-
 .media-header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -366,8 +187,7 @@ onMounted(async () => {
   padding: 12px 14px;
 }
 
-.header-back-button,
-.overlay-back-button {
+.header-back-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -375,27 +195,12 @@ onMounted(async () => {
   height: 44px;
   border: 0;
   border-radius: 14px;
+  background: #f4f6fb;
   color: var(--app-title);
   cursor: pointer;
 }
 
-.header-back-button {
-  background: #f4f6fb;
-}
-
-.overlay-back-button {
-  position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 16px);
-  left: 16px;
-  z-index: 3;
-  background: rgba(9, 12, 18, 0.68);
-  color: #ffffff;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(12px);
-}
-
-.header-back-button .el-icon,
-.overlay-back-button .el-icon {
+.header-back-button .el-icon {
   font-size: 22px;
 }
 
@@ -415,294 +220,44 @@ onMounted(async () => {
   font-size: 13px;
 }
 
-.video-player-shell {
-  position: fixed;
-  inset: 0;
-  isolation: isolate;
-  background: #000000;
-  overflow: hidden;
+.media-stage {
+  padding: 12px;
+  background: #111318;
 }
 
-.video-player-shell::after {
-  content: '';
-  position: absolute;
-  inset: auto 0 0;
-  height: min(42vh, 360px);
-  background: linear-gradient(180deg, rgba(3, 5, 10, 0) 0%, rgba(3, 5, 10, 0.2) 26%, rgba(3, 5, 10, 0.82) 100%);
-  pointer-events: none;
-  z-index: 1;
-}
-
-.fullscreen-video {
-  display: block;
-  width: 100vw;
-  height: 100vh;
-  height: 100dvh;
-  object-fit: cover;
-  background: #000000;
-}
-
-.video-detail-preview {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 2;
-  padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 20px);
-  color: #ffffff;
-  cursor: pointer;
-}
-
-.video-detail-preview-content {
-  display: grid;
-  gap: 14px;
-  max-width: min(100%, 520px);
-  padding: 22px 18px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 26px;
-  background: linear-gradient(180deg, rgba(12, 16, 24, 0.18) 0%, rgba(12, 16, 24, 0.74) 100%);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(12px);
-}
-
-.video-detail-tag {
-  display: inline-flex;
-  width: fit-content;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 12px;
-  line-height: 1;
-}
-
-.video-detail-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-}
-
-.video-detail-heading strong {
-  min-width: 0;
-  overflow: hidden;
-  color: #ffffff;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.15;
-  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
-}
-
-.video-detail-price {
-  flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.94);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.2;
-  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
-}
-
-.video-detail-description {
-  display: -webkit-box;
-  margin: 0;
-  overflow: hidden;
-  color: rgba(255, 255, 255, 0.88);
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  line-height: 1.7;
-  text-shadow: 0 3px 14px rgba(0, 0, 0, 0.32);
-}
-
-.video-detail-footer {
+.media-slide {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.video-detail-supplier {
-  min-width: 0;
+  justify-content: center;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.78);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  line-height: 1.3;
-  text-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
-}
-
-.video-detail-action {
-  flex-shrink: 0;
-  min-height: 42px;
-  padding: 0 18px;
-  border: 0;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #111318;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.detail-sheet-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  border: 0;
-  background: rgba(4, 7, 12, 0.38);
-}
-
-.detail-sheet {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 4;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-height: min(56vh, 56dvh);
-  max-height: min(88vh, 88dvh);
-  border-radius: 32px 32px 0 0;
-  background: rgba(248, 249, 252, 0.98);
-  box-shadow: 0 -14px 40px rgba(0, 0, 0, 0.18);
-  color: var(--app-title);
-  transform: translate3d(0, 100%, 0);
-  transition: var(--detail-sheet-transition, transform 220ms ease-out);
-  will-change: transform;
-}
-
-.detail-sheet.is-open {
-  transform: translate3d(0, var(--detail-sheet-offset, 0px), 0);
-}
-
-.detail-sheet.is-dragging {
-  transition: none;
-}
-
-.detail-sheet-header {
-  padding: 12px 18px 18px;
-  touch-action: none;
-}
-
-.detail-sheet-handle {
-  display: block;
-  width: 48px;
-  height: 5px;
-  margin: 0 auto 16px;
-  border-radius: 999px;
-  background: rgba(17, 19, 24, 0.14);
-}
-
-.detail-sheet-hero {
-  display: grid;
-  gap: 12px;
-}
-
-.detail-sheet-tag {
-  display: inline-flex;
-  width: fit-content;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(64, 158, 255, 0.12);
-  color: var(--app-primary-dark);
-  font-size: 12px;
-}
-
-.detail-sheet-title-row {
-  display: grid;
-  gap: 8px;
-}
-
-.detail-sheet-title-row h2 {
-  margin: 0;
-  font-size: 26px;
-  line-height: 1.25;
-}
-
-.detail-sheet-title-row p {
-  margin: 0;
-  color: var(--app-primary);
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.detail-sheet-subtitle {
-  color: var(--app-text-secondary);
-  font-size: 14px;
-}
-
-.detail-sheet-body {
-  display: grid;
-  gap: 16px;
-  overflow-y: auto;
-  padding: 0 18px calc(env(safe-area-inset-bottom, 0px) + 24px);
-  overscroll-behavior: contain;
-}
-
-.detail-sheet-section,
-.detail-sheet-meta div {
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: inset 0 0 0 1px rgba(17, 19, 24, 0.04);
-}
-
-.detail-sheet-section {
-  padding: 18px;
   border-radius: 22px;
-}
-
-.detail-sheet-section h3 {
-  margin: 0 0 12px;
-  font-size: 16px;
-}
-
-.detail-sheet-description {
-  margin: 0;
-  color: var(--app-text-secondary);
-  line-height: 1.75;
-}
-
-.detail-sheet-meta {
-  display: grid;
-  gap: 12px;
-}
-
-.detail-sheet-meta div {
-  display: grid;
-  gap: 6px;
-  padding: 16px 18px;
-  border-radius: 22px;
-}
-
-.detail-sheet-meta span {
-  color: var(--app-text-secondary);
-  font-size: 13px;
-}
-
-.detail-sheet-meta strong {
-  color: var(--app-title);
-  font-size: 16px;
-}
-
-.detail-sheet :deep(.el-button) {
-  min-height: 50px;
-  border-radius: 18px;
-}
-
-.media-stage {
-  padding: 10px;
   background: #111318;
 }
 
 .media-view {
   display: block;
   width: 100%;
-  max-height: calc(100vh - 280px);
-  max-height: calc(100dvh - 280px);
-  border-radius: 18px;
+  min-height: clamp(260px, 58vh, 680px);
+  max-height: clamp(260px, 70vh, 760px);
   object-fit: contain;
   background: #111318;
+}
+
+.media-video {
+  background: #000000;
+}
+
+.media-type-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-size: 12px;
+  backdrop-filter: blur(10px);
 }
 
 .media-state {
@@ -721,6 +276,13 @@ onMounted(async () => {
 
 .media-info {
   display: grid;
+  gap: 16px;
+}
+
+.info-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
   gap: 12px;
 }
 
@@ -736,68 +298,36 @@ onMounted(async () => {
   font-size: 22px;
 }
 
+.info-price {
+  flex-shrink: 0;
+  color: var(--app-primary);
+  font-size: 18px;
+}
+
 .info-description {
   margin: 0;
   color: var(--app-text-secondary);
-  line-height: 1.6;
+  line-height: 1.7;
 }
 
-.info-meta {
+.info-chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
+}
+
+.info-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #f4f6fb;
   color: var(--app-text-secondary);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 @media (max-width: 640px) {
-  .video-detail-preview {
-    padding: 0 12px calc(env(safe-area-inset-bottom, 0px) + 16px);
-  }
-
-  .video-detail-preview-content {
-    gap: 12px;
-    padding: 18px 14px 14px;
-    border-radius: 22px;
-  }
-
-  .video-detail-heading {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .video-detail-heading strong {
-    font-size: 20px;
-  }
-
-  .video-detail-price {
-    font-size: 13px;
-  }
-
-  .video-detail-description {
-    -webkit-line-clamp: 2;
-    font-size: 13px;
-  }
-
-  .video-detail-supplier,
-  .video-detail-action {
-    font-size: 12px;
-  }
-
-  .video-detail-action {
-    min-height: 38px;
-    padding: 0 16px;
-  }
-
-  .detail-sheet {
-    min-height: min(58vh, 58dvh);
-    max-height: min(90vh, 90dvh);
-  }
-
-  .detail-sheet-title-row h2 {
-    font-size: 24px;
-  }
-
   .media-header {
     grid-template-columns: auto minmax(0, 1fr);
   }
@@ -808,8 +338,17 @@ onMounted(async () => {
   }
 
   .media-view {
-    max-height: calc(100vh - 320px);
-    max-height: calc(100dvh - 320px);
+    min-height: 240px;
+    max-height: 60vh;
+  }
+
+  .info-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .info-price {
+    font-size: 17px;
   }
 }
 </style>

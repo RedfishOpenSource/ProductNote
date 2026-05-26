@@ -48,16 +48,18 @@
           <section class="panel-card form-section compact-card">
             <div class="section-heading compact-heading">
               <h2>商品图片</h2>
-              <p>可添加多张图片，列表和搜索默认使用第一张。</p>
+              <p>可添加多张图片，左右滑动切换查看，列表和搜索默认使用第一张。</p>
             </div>
 
-            <div v-if="imagePreviews.length > 0" class="image-preview-grid compact-preview-box">
-              <div v-for="(preview, index) in imagePreviews" :key="preview.file.path" class="image-preview-card">
-                <img :src="preview.url" alt="商品图片" class="preview-image" />
-                <span v-if="index === 0" class="cover-badge">封面</span>
-                <el-button class="image-remove-button" link type="danger" @click="removeProductImage(preview.file)">删除</el-button>
-              </div>
-            </div>
+            <SwipeCarousel v-if="imagePreviews.length > 0" class="compact-preview-box" :items="imagePreviewItems" aria-label="商品图片轮播">
+              <template #default="{ item, index }">
+                <div class="image-preview-card">
+                  <img :src="item.url" alt="商品图片" class="preview-image" />
+                  <span v-if="index === 0" class="cover-badge">封面</span>
+                  <el-button class="image-remove-button" link type="danger" @click="removeProductImage(item.file)">删除</el-button>
+                </div>
+              </template>
+            </SwipeCarousel>
             <div v-else class="preview-empty compact-preview-empty">
               <el-icon><Picture /></el-icon>
               <span>还没有上传图片</span>
@@ -78,24 +80,30 @@
           <section class="panel-card form-section compact-card">
             <div class="section-heading compact-heading">
               <h2>商品视频</h2>
-              <p>支持手机拍摄短视频，也可以从相册或文件中选择视频。</p>
+              <p>支持手机拍摄短视频，也可以从相册或文件中选择视频；多个视频可左右滑动切换。</p>
             </div>
 
             <div v-if="videoAttachments.length === 0" class="preview-empty video-empty compact-preview-empty">
               <el-icon><VideoCamera /></el-icon>
               <span>还没有添加商品视频</span>
             </div>
-            <div v-else class="file-list compact-file-list">
-              <div v-for="video in videoAttachments" :key="video.path" class="file-item compact-file-item">
-                <button class="file-main" type="button" @click="previewStoredFile(video)">
-                  <div>
-                    <strong>{{ video.name }}</strong>
-                    <span>{{ video.mimeType || '视频文件' }}</span>
+            <SwipeCarousel v-else class="compact-preview-box" :items="videoPreviewItems" aria-label="商品视频轮播">
+              <template #default="{ item }">
+                <div class="video-preview-card">
+                  <video :src="item.url" class="preview-video" controls playsinline preload="metadata" />
+                  <div class="video-preview-meta">
+                    <div class="video-preview-copy">
+                      <strong>{{ item.file.name }}</strong>
+                      <span>{{ item.file.mimeType || '视频文件' }}</span>
+                    </div>
+                    <div class="video-preview-actions">
+                      <el-button link type="primary" @click="previewStoredFile(item.file)">打开</el-button>
+                      <el-button link type="danger" @click="removeStoredFile(item.file)">删除</el-button>
+                    </div>
                   </div>
-                </button>
-                <el-button link type="danger" @click="removeStoredFile(video)">删除</el-button>
-              </div>
-            </div>
+                </div>
+              </template>
+            </SwipeCarousel>
 
             <div class="media-button-grid media-button-grid-spaced compact-button-grid">
               <el-button type="primary" @click="captureVideo">
@@ -185,6 +193,7 @@ import { Capacitor } from '@capacitor/core'
 import { ElMessage } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import SwipeCarousel from '../components/SwipeCarousel.vue'
 import { consumePendingProductCreateDraft } from '../services/product-create-draft'
 import { deleteStoredFile, openStoredFile, resolveFileUrl, saveFile, savePhotoBlob } from '../services/file-service'
 import { createId } from '../services/id'
@@ -201,6 +210,7 @@ const videoInput = ref<HTMLInputElement | null>(null)
 const videoCaptureInput = ref<HTMLInputElement | null>(null)
 const attachmentInput = ref<HTMLInputElement | null>(null)
 const imagePreviews = ref<Array<{ file: StoredFile; url: string }>>([])
+const videoPreviews = ref<Array<{ file: StoredFile; url: string }>>([])
 const saving = ref(false)
 const createdAt = ref('')
 const removedFiles = ref<StoredFile[]>([])
@@ -242,6 +252,18 @@ const attachmentGroups = computed(() => {
 })
 const videoAttachments = computed(() => attachmentGroups.value.videos)
 const otherAttachments = computed(() => attachmentGroups.value.others)
+const imagePreviewItems = computed(() =>
+  imagePreviews.value.map((preview) => ({
+    key: preview.file.path,
+    ...preview,
+  })),
+)
+const videoPreviewItems = computed(() =>
+  videoPreviews.value.map((preview) => ({
+    key: preview.file.path,
+    ...preview,
+  })),
+)
 
 function showToast(message: string, color: 'success' | 'warning' | 'danger' = 'success') {
   const type = color === 'danger' ? 'error' : color
@@ -283,9 +305,16 @@ function syncPrimaryImage(): void {
   form.image = form.images[0] ?? null
 }
 
-async function refreshImagePreviews() {
+async function refreshMediaPreviews() {
   imagePreviews.value = await Promise.all(
     form.images.map(async (file) => ({
+      file,
+      url: await resolveFileUrl(file),
+    })),
+  )
+
+  videoPreviews.value = await Promise.all(
+    videoAttachments.value.map(async (file) => ({
       file,
       url: await resolveFileUrl(file),
     })),
@@ -325,7 +354,7 @@ async function loadProduct() {
   if (!isEditMode.value) {
     createdAt.value = new Date().toISOString()
     applyCreateDraft()
-    await refreshImagePreviews()
+    await refreshMediaPreviews()
     return
   }
 
@@ -337,19 +366,19 @@ async function loadProduct() {
   }
 
   fillForm(product)
-  await refreshImagePreviews()
+  await refreshMediaPreviews()
 }
 
 async function addProductImages(files: StoredFile[]) {
   form.images.push(...files)
   syncPrimaryImage()
-  await refreshImagePreviews()
+  await refreshMediaPreviews()
 }
 
 async function addAttachmentFiles(files: File[]) {
-  for (const file of files) {
-    form.attachments.push(await saveFile(file, 'attachment'))
-  }
+  const savedFiles = await Promise.all(files.map((file) => saveFile(file, 'attachment')))
+  form.attachments.push(...savedFiles)
+  await refreshMediaPreviews()
 }
 
 async function takePhoto() {
@@ -435,7 +464,7 @@ async function handleAttachmentsSelected(event: Event) {
   showToast(`已添加 ${attachmentCount} 个附件`)
 }
 
-function removeStoredFile(file: StoredFile) {
+async function removeStoredFile(file: StoredFile) {
   const index = form.attachments.indexOf(file)
   if (index === -1) return
 
@@ -443,6 +472,8 @@ function removeStoredFile(file: StoredFile) {
   if (removed) {
     removedFiles.value.push(removed)
   }
+
+  await refreshMediaPreviews()
 }
 
 async function removeProductImage(file: StoredFile) {
@@ -455,7 +486,7 @@ async function removeProductImage(file: StoredFile) {
   }
 
   syncPrimaryImage()
-  await refreshImagePreviews()
+  await refreshMediaPreviews()
 }
 
 async function previewStoredFile(file: StoredFile) {
@@ -714,31 +745,41 @@ onMounted(async () => {
   margin-bottom: 10px;
 }
 
-.image-preview-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.image-preview-card {
+.image-preview-card,
+.video-preview-card {
   position: relative;
   min-width: 0;
   overflow: hidden;
-  border-radius: 14px;
+  border: 1px solid rgba(17, 19, 24, 0.06);
+  border-radius: 18px;
   background: #f5f7fa;
+}
+
+.image-preview-card {
+  min-height: 220px;
 }
 
 .preview-image {
   width: 100%;
+  min-height: 220px;
   aspect-ratio: 4 / 3;
   object-fit: cover;
-  border-radius: 14px;
+  border-radius: 18px;
+}
+
+.preview-video {
+  display: block;
+  width: 100%;
+  min-height: 220px;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #111318;
 }
 
 .cover-badge {
   position: absolute;
-  top: 8px;
-  left: 8px;
+  top: 12px;
+  left: 12px;
   padding: 3px 8px;
   border-radius: 999px;
   background: rgba(17, 19, 24, 0.68);
@@ -748,12 +789,50 @@ onMounted(async () => {
 
 .image-remove-button {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
+  right: 12px;
+  bottom: 12px;
   min-height: 28px;
   padding: 0 8px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.9);
+}
+
+.video-preview-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 14px;
+  background: #ffffff;
+}
+
+.video-preview-copy {
+  min-width: 0;
+}
+
+.video-preview-copy strong,
+.video-preview-copy span {
+  display: block;
+}
+
+.video-preview-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.video-preview-copy span {
+  margin-top: 4px;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+}
+
+.video-preview-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .preview-empty {
@@ -868,13 +947,22 @@ onMounted(async () => {
 
 @media (max-width: 640px) {
   .field-grid,
-  .image-preview-grid,
   .media-button-grid {
     grid-template-columns: 1fr;
   }
 
   .page-title {
     font-size: 18px;
+  }
+
+  .video-preview-meta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .video-preview-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 
   .file-item {
