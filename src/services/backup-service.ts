@@ -1,6 +1,6 @@
-import { getPrimaryProductImage, normalizeProductImages } from '../types/product'
-import type { BackupFile, BackupPayload, Product, ProductBackup } from '../types/product'
-import { exportBackupText, exportStoredFile, restoreBackupFile } from './file-service'
+import { normalizeProductImages } from '../types/product'
+import type { BackupFile, Product, ProductBackup } from '../types/product'
+import { restoreBackupFile } from './file-service'
 import { replaceAllProducts } from './product-store'
 
 type LegacyProductBackup = Omit<ProductBackup, 'images' | 'model3d'> & {
@@ -13,24 +13,6 @@ type ParsedBackupPayload = {
   products?: Array<ProductBackup | LegacyProductBackup>
 }
 
-function buildExportFileName(): string {
-  const now = new Date()
-  const datePart = now.toISOString().slice(0, 10)
-  const timePart = now.toTimeString().slice(0, 8).replace(/:/g, '-')
-  return `商品备份-${datePart}-${timePart}.json`
-}
-
-async function exportModel3d(model3d: Product['model3d']): Promise<ProductBackup['model3d']> {
-  if (!model3d) {
-    return null
-  }
-
-  return {
-    ...model3d,
-    file: await exportStoredFile(model3d.file),
-  }
-}
-
 async function restoreModel3d(model3d: ProductBackup['model3d'] | null): Promise<Product['model3d']> {
   if (!model3d) {
     return null
@@ -40,32 +22,6 @@ async function restoreModel3d(model3d: ProductBackup['model3d'] | null): Promise
     ...model3d,
     file: await restoreBackupFile(model3d.file),
   }
-}
-
-export async function exportProducts(products: Product[]): Promise<string> {
-  const backupProducts: ProductBackup[] = []
-
-  for (const product of products) {
-    const primaryImage = getPrimaryProductImage(product)
-    const images = normalizeProductImages(primaryImage, product.images)
-
-    backupProducts.push({
-      ...product,
-      image: primaryImage ? await exportStoredFile(primaryImage) : null,
-      images: await Promise.all(images.map((file) => exportStoredFile(file))),
-      attachments: await Promise.all(product.attachments.map((file) => exportStoredFile(file))),
-      model3d: await exportModel3d(product.model3d),
-    })
-  }
-
-  const payload: BackupPayload = {
-    version: 3,
-    exportedAt: new Date().toISOString(),
-    products: backupProducts,
-  }
-
-  const content = JSON.stringify(payload, null, 2)
-  return exportBackupText(buildExportFileName(), content)
 }
 
 export async function importProducts(content: string): Promise<number> {

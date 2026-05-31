@@ -170,7 +170,66 @@ export async function restoreBackupFile(file: BackupFile) {
   return await saveBase64File(dataUrl, file.name, file.mimeType, file.kind)
 }
 
-export async function exportBackupText(fileName: string, content: string) {
+type ExportFileOptions = {
+  mimeType?: string
+  shareTitle?: string
+  shareText?: string
+  dialogTitle?: string
+}
+
+async function downloadBlob(fileName: string, blob: Blob) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  link.click()
+  URL.revokeObjectURL(url)
+  return fileName
+}
+
+export async function exportFileBlob(fileName: string, blob: Blob, options: ExportFileOptions = {}) {
+  const {
+    shareTitle = '导出文件',
+    shareText = '文件已生成',
+    dialogTitle = '导出文件',
+  } = options
+
+  if (!isNativePlatform) {
+    return await downloadBlob(fileName, blob)
+  }
+
+  const dataUrl = await blobToDataUrl(blob)
+
+  await Filesystem.writeFile({
+    path: fileName,
+    data: stripDataPrefix(dataUrl),
+    directory: Directory.Documents,
+    recursive: true,
+  })
+
+  const fileUri = await Filesystem.getUri({
+    path: fileName,
+    directory: Directory.Documents,
+  })
+
+  await Share.share({
+    title: shareTitle,
+    text: shareText,
+    url: fileUri.uri,
+    dialogTitle,
+  })
+
+  return fileUri.uri
+}
+
+export async function exportBackupText(fileName: string, content: string, options: ExportFileOptions = {}) {
+  const {
+    mimeType = 'application/json',
+    shareTitle = '商品备份',
+    shareText = '商品备份文件已生成',
+    dialogTitle = '导出商品备份',
+  } = options
+
   if (isNativePlatform) {
     await Filesystem.writeFile({
       path: fileName,
@@ -186,23 +245,16 @@ export async function exportBackupText(fileName: string, content: string) {
     })
 
     await Share.share({
-      title: '商品备份',
-      text: '商品备份文件已生成',
+      title: shareTitle,
+      text: shareText,
       url: fileUri.uri,
-      dialogTitle: '导出商品备份',
+      dialogTitle,
     })
 
     return fileUri.uri
   }
 
-  const blob = new Blob([content], { type: 'application/json;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  link.click()
-  URL.revokeObjectURL(url)
-  return fileName
+  return await downloadBlob(fileName, new Blob([content], { type: `${mimeType};charset=utf-8` }))
 }
 
 export async function readImportFile(file: File) {

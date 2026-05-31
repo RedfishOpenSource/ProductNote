@@ -58,6 +58,10 @@
         <button class="icon-button" type="button" aria-label="打开搜索" @click="openSearch">
           <el-icon><Search /></el-icon>
         </button>
+
+        <button class="icon-button" type="button" aria-label="分享 PDF" :disabled="exporting" @click="handleShareExport">
+          <el-icon><Share /></el-icon>
+        </button>
       </div>
 
       <div v-if="!showSearchHistoryPanel" class="summary-row">
@@ -206,9 +210,9 @@
             <p>导入会覆盖当前商品数据。</p>
           </div>
           <div class="settings-action-stack">
-            <el-button class="settings-action" @click="handleExport">
+            <el-button class="settings-action" :loading="exporting" @click="handleExport">
               <el-icon><Download /></el-icon>
-              导出数据
+              导出 PDF
             </el-button>
             <el-button class="settings-action" @click="openImportPicker">
               <el-icon><Upload /></el-icon>
@@ -254,7 +258,7 @@
 
     <input
       ref="importInput"
-      accept=".json,application/json"
+      accept=".prd,.json,application/json"
       class="hidden-input"
       type="file"
       @change="handleImport"
@@ -300,6 +304,7 @@ import {
   Loading,
   Plus,
   Search,
+  Share,
   Upload,
   VideoCamera,
 } from '@element-plus/icons-vue'
@@ -308,7 +313,8 @@ import { Capacitor } from '@capacitor/core'
 import { ElMessage } from 'element-plus'
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { exportProducts, importProducts } from '../services/backup-service'
+import { importProducts } from '../services/backup-service'
+import { exportProductsPdf } from '../services/product-pdf-export-service'
 import { deleteStoredFile, readImportFile, resolveFileUrl, saveFile, savePhotoBlob } from '../services/file-service'
 import { clearPendingProductCreateDraft, setPendingProductCreateDraft } from '../services/product-create-draft'
 import type { ProductCreateDraft } from '../services/product-create-draft'
@@ -354,6 +360,7 @@ const photoSearchResults = ref<VisualSearchResult[] | null>(null)
 const photoSearchSummary = ref('')
 const preparingVisualIndex = ref(false)
 const searchingByPhoto = ref(false)
+const exporting = ref(false)
 const settingsOpen = ref(false)
 const createEntryOpen = ref(false)
 const createEntryBusy = ref(false)
@@ -980,14 +987,24 @@ function handleDrawerTouchEnd(): void {
 }
 
 async function handleExport(): Promise<void> {
+  if (exporting.value) return
+
+  exporting.value = true
+
   try {
-    await exportProducts(products.value)
+    await exportProductsPdf(products.value)
     closeSettings()
-    showToast('备份文件已导出')
+    showToast('PDF 已导出')
   } catch (error) {
     console.error(error)
-    showToast('导出失败，请稍后重试', 'danger')
+    showToast('导出 PDF 失败，请稍后重试', 'danger')
+  } finally {
+    exporting.value = false
   }
+}
+
+async function handleShareExport(): Promise<void> {
+  await handleExport()
 }
 
 async function handleImport(event: Event) {
@@ -1128,7 +1145,7 @@ onMounted(async () => {
 }
 
 .top-icon-bar {
-  grid-template-columns: 40px minmax(0, 1fr) 40px;
+  grid-template-columns: 40px minmax(0, 1fr) 40px 40px;
 }
 
 .search-mode-shell {
@@ -1706,6 +1723,10 @@ onMounted(async () => {
 }
 
 @media (max-width: 640px) {
+  .top-icon-bar {
+    grid-template-columns: 36px minmax(0, 1fr) 36px 36px;
+  }
+
   .search-mode-bar {
     grid-template-columns: 36px minmax(0, 1fr) 36px auto;
   }

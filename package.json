@@ -23,6 +23,8 @@
     "@capacitor/share": "^6.0.2",
     "@element-plus/icons-vue": "^2.3.1",
     "element-plus": "^2.11.5",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "three": "^0.184.0",
     "vue": "^3.4.15",
     "vue-router": "^4.6.4"
