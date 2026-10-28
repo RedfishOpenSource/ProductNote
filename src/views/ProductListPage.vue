@@ -693,6 +693,11 @@ async function createVideoCoverBlob(file: File): Promise<Blob> {
     video.playsInline = true
 
     await new Promise<void>((resolve, reject) => {
+      // 无超时会因损坏/特殊编码视频永久挂起，与抽帧服务保持一致。
+      const timer = window.setTimeout(() => {
+        cleanup()
+        reject(new Error('读取视频超时，请换一个文件'))
+      }, 15000)
       const handleLoaded = () => {
         cleanup()
         resolve()
@@ -702,6 +707,7 @@ async function createVideoCoverBlob(file: File): Promise<Blob> {
         reject(new Error('无法读取视频内容'))
       }
       const cleanup = () => {
+        window.clearTimeout(timer)
         video.removeEventListener('loadeddata', handleLoaded)
         video.removeEventListener('error', handleError)
       }

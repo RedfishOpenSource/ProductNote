@@ -20,6 +20,8 @@
   - [x] 新增 `tests/app.spec.js` 10 项：CRUD 四字段全流程、备份导出→导入回环、旧版 v1 备份兼容、空库导出报错、CSV/PDF 下载、视图模式与搜索历史持久化、Web 图片搜索签名降级召回、3D GLB 生成、媒体/模型页状态。
   - [x] **安卓 APK 编译通过**：用本机缓存 Gradle 8.12（wrapper 的 8.2.1 下载因网络 SSL 失败，缓存为 0 字节）+ AGP 8.2.1 在线解析，`cap sync` + `assembleDebug` 成功，APK 含最新 bundle；无设备，运行时未验证。
   - [x] 用户测试服务（5173）已按用户要求关闭；测试自行拉起 4174 并自动回收。
+  - [x] 二轮深测（同日）：新增 `tests/flows.spec.js` 6 项——新增抽屉三入口、拍照新建草稿、**长按相机→录像真实 MP4 封面生成**→含视频徽标→媒体页可播、视频附件添加/删除持久化、价格三态显示、轮播点点切换；修复 `createVideoCoverBlob` 无超时挂起风险。共 **31 项全过**。
+  - [x] 盘点出两个**未接线功能**（如实记录，不虚构）：`generateProductModel`（3D 生成）与 `buildDraftFromSpeechText`（语音文本解析）目前均无 UI 调用方——3D 页恒为空态、语音解析只有服务层。接入属于新功能开发，另行排期。
   - [x] 加载元数据/定位有超时和取消，首帧等待解码就绪，失败也释放视频/canvas/对象 URL。
   - [x] 每次最多 60 候选、最多 1800 采样点、最长边上限及图片占用上限；到达候选上限提示分段。
   - [x] 使用共用数值校验：空库存/价格为 `null`；显式 `0` 保留；拒绝无效价、小数库存、负数和不安全整数。
@@ -34,12 +36,12 @@
 
 ## 验证结果（2026-10-28 全面测试后）
 
-- **Playwright 25 项全部通过**（本机 Chrome 无头；隔离上下文，端口 4174 自动拉起/回收）：
+- **Playwright 31 项全部通过**（本机 Chrome 无头；隔离上下文，端口 4174 自动拉起/回收）：
   - `app.spec.js`（10）：语音草稿逐子句解析；新建→列表→编辑回显→删除全流程（含分类下拉/图片上传/四字段）；备份导出 JSON（含 base64 图片+四字段）→篡改数据→导入完整恢复；v1 旧备份（无四字段/无 images 数组）兼容导入；空库导出报错；设置页 CSV（分类推断+空值）；PDF 下载（%PDF- 头+体积）；卡片/短视频模式与搜索历史持久化；同图搜索召回（JS 签名降级）；GLB 生成（photos/2 源/二进制）与媒体/模型/404 页状态。
   - `video-entry.spec.js`（15）：上一轮全部保留通过。
+  - `flows.spec.js`（6）：新增抽屉入口路由；拍照新建草稿→表单带图→保存→媒体页；**长按相机录像流**（真实 6 秒 MP4：封面 blob 生成+视频附件草稿+保存后列表“含视频”徽标+媒体页 1 视频 1 图片+可播元素+轮播点点）；编辑页视频附件添加/删除持久化；价格未填/零/小数三态在列表与媒体页一致；轮播点点切换。
 - `npm run build`：vue-tsc/Vite 通过。
 - **安卓编译验证**：`npx cap sync android` + `gradle assembleDebug` 成功（Gradle 8.12 离线增量+首次在线拉取 AGP 8.2.1）；产物 `android/app/build/outputs/apk/debug/app-debug.apk`（≈15.2MB）内嵌最新 bundle。**仅编译验证，未在设备运行**；wrapper 8.2.1 在本机因网络问题下载失败，用缓存 Gradle 8.12 绕过，未改仓库配置。
-- 端口 5173/4174 已确认无监听，测试进程不残留。
 
 ## 已核实边界（必须如实描述）
 
@@ -50,6 +52,8 @@
 5. SQLite 真机迁移、安卓选/拍视频、WebView 解码、文件清理仍待真机测试；本轮仅到编译+打包层面。
 6. Web Preferences 存图片可能达到浏览器配额；会显示保存失败并支持固定 ID 重试，不能保证任意长视频全部入库。
 7. PDF 分页逻辑对超长清单未做逐页裁剪验证（本轮仅验证单页场景可下载）。
+8. **未接线功能**：3D 生成（`generateProductModel`）与语音文本解析（`buildDraftFromSpeechText`）均无 UI 调用方；3D 页恒空态、语音解析未接界面。接入属新功能，未排期，不得宣称已有“3D 建模”或“语音录入”可用功能（语音依赖 OfflineSpeech 插件，Android 才可能可用，且同样未接线）。
+9. `createVideoCoverBlob` 已加 15 秒超时防挂；但长视频/慢设备的封面生成耗时未在低端机验证。
 
 ## 下次优先工作（按顺序）
 
@@ -64,7 +68,7 @@
 - 校验/表单：`product-entry-fields.ts`、`src/views/ProductFormPage.vue`。
 - 持久化/备份：`product-store.ts`、`file-service.ts`、`backup-service.ts`（含导出）。
 - 导出/入口：`agentmall-export.ts`、`ProductListPage.vue`、`src/router/index.ts`。
-- 回归：`tests/app.spec.js`、`tests/video-entry.spec.js`、`tests/fixtures/`、`playwright.config.js`。
+- 回归：`tests/app.spec.js`、`tests/flows.spec.js`、`tests/video-entry.spec.js`、`tests/fixtures/`、`playwright.config.js`。
 - 安卓：Gradle 8.12 缓存绕过方式见「验证结果」；wrapper 属性未改动。
 
 ## 日期与现场提醒

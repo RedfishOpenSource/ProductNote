@@ -52,7 +52,9 @@ PLAYWRIGHT_CHANNEL=chrome npm test
 $env:PLAYWRIGHT_CHANNEL='chrome'; npm test
 ```
 
-`tests/fixtures/shop-test.mp4` 是 FFmpeg testsrc2 生成的 6 秒合成测试素材，不包含真实店铺资料。共 25 项测试：视频批量录入 15 项(`tests/video-entry.spec.js`)+ 全应用 10 项(`tests/app.spec.js`：CRUD/备份回环/旧版导入/CSV/PDF/搜索/3D)。测试使用独立浏览器上下文，不操作日常浏览器商品数据。截图和失败跟踪写入已忽略的 `test-results/`。
+`tests/fixtures/shop-test.mp4` 是 FFmpeg testsrc2 生成的 6 秒合成测试素材，不包含真实店铺资料。共 31 项测试：视频批量录入 15 项(`tests/video-entry.spec.js`)+ 全应用 10 项(`tests/app.spec.js`：CRUD/备份回环/旧版导入/CSV/PDF/搜索/3D)+ 相机与媒体流 6 项(`tests/flows.spec.js`：长按录像封面/视频附件/价格三态/轮播)。测试使用独立浏览器上下文，不操作日常浏览器商品数据。截图和失败跟踪写入已忽略的 `test-results/`。
+
+如实说明：3D 生成与语音文本解析目前是无 UI 调用方的服务层代码，测试覆盖的是纯函数行为，不代表界面功能可用。
 
 安卓编译(本机网络下 wrapper 下载失败时的绕过方式，不改仓库配置)：
 
