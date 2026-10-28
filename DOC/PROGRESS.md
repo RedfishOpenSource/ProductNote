@@ -43,7 +43,12 @@
 - `npm run build`：vue-tsc/Vite 通过。
 - **安卓编译验证**：`npx cap sync android` + `gradle assembleDebug` 成功（Gradle 8.12 离线增量+首次在线拉取 AGP 8.2.1）；产物 `android/app/build/outputs/apk/debug/app-debug.apk`（≈15.2MB）内嵌最新 bundle。**仅编译验证，未在设备运行**；wrapper 8.2.1 在本机因网络问题下载失败，用缓存 Gradle 8.12 绕过，未改仓库配置。
 
-## 已核实边界（必须如实描述）
+## 远端与隐私
+
+- 本仓库与 AgentMall 均已配置 GitHub 远端（github.com/RedfishOpenSource/ProductNote、/AgentMall）；旧档「无远端」过时。
+- 截至本轮 ProductNote 领先 origin/main 5 个提交、AgentMall 领先 4 个，均未推送；是否推送由用户决定——仓库内含店铺电话、照片等真实信息，推送前需确认仓库可见性（私有/公开）与隐私接受度。
+
+## 已确认边界（必须如实描述）
 
 1. **抽帧不是商品检测**：一帧可含多件商品、同一商品会重复，不能保证全店无遗漏；仍需人工核对和补录。
 2. 原生 Java 仅有 MainActivity/OfflineSpeechPlugin，**没有 VisualSearch 实现**。有运行时插件才可能拿到语义标签；Web 和当前源码不能承诺自动识别名称。JS 图像签名只是相似匹配（本轮已实测同图召回可用，跨图效果未评估）。
