@@ -230,7 +230,12 @@ export function isVisualSearchSupported(): boolean {
   return hasNativeVisualSearch() || canUseFallbackVisualSearch()
 }
 
-/** 提取任意已存图片的标签(仅安卓原生插件;Web/失败返回空数组,不阻塞调用方) */
+/** 语义标签只在实际存在原生插件时可用，图像签名不算语义识别。 */
+export function isSemanticLabelingSupported(): boolean {
+  return hasNativeVisualSearch()
+}
+
+/** 提取已存图片的标签；Web/插件缺失/失败返回空数组，不阻塞人工录入。 */
 export async function extractLabelsForFile(file: StoredFile): Promise<VisualLabel[]> {
   if (!hasNativeVisualSearch()) return []
   try {

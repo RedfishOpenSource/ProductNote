@@ -1,15 +1,8 @@
-/**
- * 视频批量录入·抽帧服务(纯离线):
- * 输入一个逛店视频 → 按 N 秒间隔抽帧 → dHash 去重(画面变化大的帧=新商品候选)
- * → 输出候选帧列表(JPEG dataUrl 即商品首图)。
- * 支持环境:Web / 安卓 WebView(HTML5 video + canvas,本地文件经 blob/dataUrl URL 传入)。
- */
+/** 离线抽帧只生成待人工确认的画面，不等于商品检测。 */
 import { computeDHashFromCanvas, hammingDistanceHex } from './frame-dedup'
 
 export interface ExtractedFrame {
-  /** 视频内时间点(秒,保留 1 位小数) */
   timestampSeconds: number
-  /** 帧 JPEG dataUrl(即商品首图) */
   dataUrl: string
   width: number
   height: number
@@ -17,112 +10,126 @@ export interface ExtractedFrame {
 }
 
 export interface ExtractionOptions {
-  /** 抽帧间隔秒数,默认 2 */
   intervalSeconds?: number
-  /** 判定为"新画面"的最小汉明距离(0~64),默认 10 */
   minDistanceBits?: number
-  /** 最多保留候选帧数,默认 60 */
   maxFrames?: number
-  /** 抽帧画布宽度(高度按视频比例),默认 720 */
+  /** 最长边像素数（保留原字段名），默认 720，最高 1280。 */
   captureWidth?: number
-  /** 进度回调(已保留帧数, 已扫描秒, 总时长秒) */
+  signal?: AbortSignal
+  /** 每次加载/定位的超时毫秒数；可供回归测试缩短等待。 */
+  timeoutMs?: number
   onProgress?: (keptFrames: number, scannedSeconds: number, totalSeconds: number) => void
+}
+
+function bounded(value: number | undefined, fallback: number, min: number, max: number): number {
+  return Number.isFinite(value) ? Math.min(max, Math.max(min, value!)) : fallback
+}
+
+function checkAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new DOMException('已取消抽帧', 'AbortError')
+}
+
+/** 必须等解码画面就绪；超时不得被当作定位成功。 */
+function waitForVideo(
+  video: HTMLVideoElement,
+  ready: () => boolean,
+  events: string[],
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+  action?: () => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timer)
+      events.forEach((event) => video.removeEventListener(event, onReady))
+      video.removeEventListener('error', onError)
+      signal?.removeEventListener('abort', onAbort)
+    }
+    const fail = (error: unknown) => { cleanup(); reject(error) }
+    const onReady = () => { if (ready()) { cleanup(); resolve() } }
+    const onError = () => fail(new Error('视频加载或解码失败，请换用浏览器支持的 MP4/H.264 视频'))
+    const onAbort = () => fail(new DOMException('已取消抽帧', 'AbortError'))
+    const timer = setTimeout(() => fail(new Error('视频加载/定位超时，请重试或分段录制')), timeoutMs)
+    events.forEach((event) => video.addEventListener(event, onReady))
+    video.addEventListener('error', onError)
+    signal?.addEventListener('abort', onAbort, { once: true })
+    try {
+      checkAborted(signal)
+      action?.()
+      if (video.error) onError()
+      else onReady()
+    } catch (error) { fail(error) }
+  })
 }
 
 export async function extractCandidateFrames(
   videoUrl: string,
   options: ExtractionOptions = {},
 ): Promise<ExtractedFrame[]> {
-  const interval = Math.max(0.5, options.intervalSeconds ?? 2)
-  const minDistance = Math.min(64, Math.max(0, options.minDistanceBits ?? 10))
-  const maxFrames = Math.max(1, options.maxFrames ?? 60)
-  const captureWidth = Math.max(320, options.captureWidth ?? 720)
-
+  checkAborted(options.signal)
+  const interval = bounded(options.intervalSeconds, 2, 0.5, 60)
+  const minDistance = bounded(options.minDistanceBits, 10, 0, 64)
+  const maxFrames = Math.floor(bounded(options.maxFrames, 60, 1, 120))
+  const longestEdge = bounded(options.captureWidth, 720, 160, 1280)
+  const timeout = bounded(options.timeoutMs, 15000, 10, 60000)
   const video = document.createElement('video')
+  const canvas = document.createElement('canvas')
   video.preload = 'auto'
   video.muted = true
   video.playsInline = true
-  video.src = videoUrl
 
-  await new Promise<void>((resolve, reject) => {
-    video.onloadedmetadata = () => resolve()
-    video.onerror = () =>
-      reject(new Error('视频加载失败。建议用 mp4 格式;相册视频可先转发/另存后再选'))
-  })
+  try {
+    await waitForVideo(video, () => video.readyState >= 1, ['loadedmetadata'], options.signal, timeout, () => {
+      video.src = videoUrl
+      video.load()
+    })
+    const duration = video.duration
+    if (!Number.isFinite(duration) || duration <= 0 || !video.videoWidth || !video.videoHeight) {
+      throw new Error('无法读取视频时长或尺寸，请换一个文件')
+    }
+    if (Math.ceil(duration / interval) > 1800) {
+      throw new Error('视频采样点超过 1800，请增大间隔或分段录制')
+    }
+    const scale = Math.min(1, longestEdge / Math.max(video.videoWidth, video.videoHeight))
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale))
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale))
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context) throw new Error('当前环境不支持视频抽帧')
 
-  const duration = Number.isFinite(video.duration) ? video.duration : 0
-  if (duration <= 0) {
-    throw new Error('无法读取视频时长,请换一个文件')
-  }
-
-  const ratio =
-    video.videoWidth > 0 && video.videoHeight > 0 ? video.videoHeight / video.videoWidth : 0.75
-  const canvas = document.createElement('canvas')
-  canvas.width = captureWidth
-  canvas.height = Math.max(2, Math.round(captureWidth * ratio))
-  const context = canvas.getContext('2d', { willReadFrequently: true })
-  if (!context) {
-    throw new Error('当前环境不支持视频抽帧')
-  }
-
-  const frames: ExtractedFrame[] = []
-  let lastHash: string | null = null
-  const totalSeconds = Math.round(duration)
-
-  for (let t = 0; t < duration && frames.length < maxFrames; t += interval) {
-    await seekTo(video, Math.min(t, Math.max(0, duration - 0.05)))
-    context.drawImage(video, 0, 0, canvas.width, canvas.height)
-    const hashHex = computeDHashFromCanvas(canvas)
-    const distance = lastHash === null ? 64 : hammingDistanceHex(lastHash, hashHex)
-
-    if (distance >= minDistance || frames.length === 0) {
-      frames.push({
-        timestampSeconds: Math.round(t * 10) / 10,
-        dataUrl: canvas.toDataURL('image/jpeg', 0.82),
-        width: canvas.width,
-        height: canvas.height,
-        hashHex,
+    const frames: ExtractedFrame[] = []
+    let lastHash: string | null = null
+    let encodedSize = 0
+    options.onProgress?.(0, 0, duration)
+    for (let t = 0; t < duration && frames.length < maxFrames; t += interval) {
+      checkAborted(options.signal)
+      const target = Math.min(t, Math.max(0, duration - 0.05))
+      const isReady = () => !video.seeking && video.readyState >= 2 && Math.abs(video.currentTime - target) < 0.05
+      await waitForVideo(video, isReady, ['seeked', 'loadeddata', 'canplay'], options.signal, timeout, () => {
+        if (Math.abs(video.currentTime - target) >= 0.001) video.currentTime = target
       })
-      lastHash = hashHex
+      checkAborted(options.signal)
+      context.drawImage(video, 0, 0, canvas.width, canvas.height)
+      const hashHex = computeDHashFromCanvas(canvas)
+      if (lastHash === null || hammingDistanceHex(lastHash, hashHex) >= minDistance) {
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.82)
+        encodedSize += dataUrl.length
+        if (encodedSize > 24 * 1024 * 1024) throw new Error('候选图片占用过大，请缩短视频或降低抽帧数量')
+        frames.push({ timestampSeconds: Math.round(target * 10) / 10, dataUrl, width: canvas.width, height: canvas.height, hashHex })
+        lastHash = hashHex
+      }
+      options.onProgress?.(frames.length, Math.min(duration, t + interval), duration)
     }
-    options.onProgress?.(frames.length, Math.round(t), totalSeconds)
+    return frames
+  } finally {
+    video.pause()
+    video.removeAttribute('src')
+    video.load()
+    canvas.width = 0
+    canvas.height = 0
   }
-
-  video.removeAttribute('src')
-  video.load()
-  return frames
 }
 
-function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
-  return new Promise((resolve) => {
-    let settled = false
-    const cleanup = () => {
-      video.removeEventListener('seeked', onSeeked)
-      window.clearTimeout(timer)
-    }
-    const onSeeked = () => {
-      if (settled) return
-      settled = true
-      cleanup()
-      resolve()
-    }
-    const timer = window.setTimeout(() => {
-      if (settled) return
-      settled = true
-      cleanup()
-      resolve()
-    }, 5000)
-
-    video.addEventListener('seeked', onSeeked)
-    video.currentTime = time
-  })
-}
-
-/** 由视觉标签生成名称建议(取置信度前 3 个标签拼接) */
+/** 仅拼接已有标签作为建议，不能凭空识别或承诺准确率。 */
 export function suggestNameFromLabels(labels: string[]): string {
-  const cleaned = labels
-    .map((label) => label.trim())
-    .filter(Boolean)
-    .slice(0, 3)
-  return cleaned.join(' ')
+  return [...new Set(labels.map((label) => label.trim()).filter(Boolean))].slice(0, 3).join(' ')
 }

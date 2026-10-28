@@ -258,7 +258,7 @@
           </button>
           <button class="create-entry-card" type="button" :disabled="createEntryBusy" @click="startVideoEntry">
             <strong>视频批量</strong>
-            <span>拍一段逛店视频,自动生成商品</span>
+            <span>本地抽取候选画面，人工确认入库</span>
           </button>
         </div>
       </div>
@@ -1008,7 +1008,7 @@ async function handleExportAgentMallCsv(): Promise<void> {
       return
     }
     await exportAgentMallCsv(products)
-    showToast('AgentMall CSV 已导出,可到店主端批量导入')
+    showToast('CSV 已导出；请核对缺失数据，微信端导入尚待联调')
   } catch (error) {
     showToast(error instanceof Error ? error.message : '导出失败', 'danger')
   }

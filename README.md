@@ -1,41 +1,62 @@
-# ProductNote - 商品采集录入 APP
+# ProductNote — 商品采集录入工具
 
-给实体店快速采集/录入商品的工具(Vue 3 + TypeScript + Vite + Capacitor 安卓 APP)。
-**当前使命:为 AgentMall 小程序(老赵厨房用品)采集商品数据**,录完一键导出 CSV → 店主端批量导入上架。
+Vue 3 + TypeScript + Vite + Element Plus + Capacitor 安卓应用，为老赵厨房用品采集商品资料；AgentMall 是关联的销售端。
 
-## 功能
+## 当前能力
 
-- 商品 CRUD:名称/价格/描述/供应商/图片/附件/3D 模型(拍照、相册、文件)
-- **语音录入**(离线):说一段话自动解析名称/价格/供应商/电话
-- **视觉搜索**:拍一张照片找相似商品(安卓原生 ML 提取标签;Web 降级为图像签名)
-- 备份/恢复(JSON+图片)、PDF 导出
-- 存储安卓端 SQLite / Web 端 Preferences
+- 商品新增、编辑、图片/附件、视频素材和 3D 模型相关页面。
+- 语音录入规则解析、图片相似搜索、备份恢复和 PDF 导出。
+- 商品含可选 `category / quantity / unit / wholesalePrice`（分类/库存/单位/批发价），普通表单可编辑并保留。旧记录缺失字段按未知处理。
+- 视频批量入口：列表右下角 `＋ → 视频批量`；本地选/拍视频 → 按间隔抽帧 → dHash 跳过相似画面 → 人工填名称/价格等 → 勾选入库。
+- 分批保存、失败重试沿用固定商品 ID；字段先全部校验，再开始入库。空库存是未知 `null`，填写 `0` 才是零，不擅自取整。
+- 抽帧支持取消和加载/定位超时；最多 60 张候选图，超过采样点/内存上限时提示分段处理。
 
-## AgentMall 通道
+## 明确边界
 
-- 商品字段含 `分类/库存数量/单位/批发价`(可空,旧数据兼容);
-- `agentmall-export.ts` 一键导出 CSV(名称,分类,价格元,库存,单位),分类关键词自动映射小程序五分类;
-- 导出的 CSV 在小程序店主端「商品管理 → 批量导入」直接上架(导入默认下架,确认后上架)。
+**抽帧不等于商品检测**：一帧可能包含多件商品，同一商品也可能多次出现，不能保证全店无遗漏。人工确认仍是必要步骤。
 
-## 视频批量录入(规划/开发中)
+- 视频完全本地处理，不接云端识别/API。
+- 当前仓库没有 `VisualSearch` 安卓原生实现，仅有插件接口。语义命名只在运行时确实提供该插件时启用；当前 Web 不提供名称识别，安卓也不能宣称已实现。
+- JS 视觉降级计算的是图像签名，只供相似匹配，不能当成语义标签。
+- 安卓录像选择、WebView 解码、SQLite 迁移、文件清理仍须真机验证；浏览器测试不替代安卓测试。
 
-拍一个逛店视频 → 每 N 秒抽帧 → dHash 去重(画面变化大=新商品)→ 候选帧自动设为商品首图 →
-安卓端用视觉标签生成名称建议 → 批量确认入库 → 导出 CSV。服务层已就绪
-(`video-entry-service.ts` / `frame-dedup.ts`),批量录入页面开发中。
+## AgentMall CSV
 
-## 开发
+列表设置或批量入库完成后可导出 UTF-8 BOM CSV，列顺序：
+
+```text
+名称,分类,价格(元),库存,单位
+```
+
+- 未知价格/库存保持空值；不含图片和批发价。无显式分类时，关键词只提供分类建议。
+- **导出不等于已打通销售端**：AgentMall 现有粘贴导入器尚不完整支持表头、CSV 引号/换行，且会把空数值变成零。修复前只把导出作为待核对清单，不要直接整文件粘贴上架。
+- 图片传输、导入器修复及微信运行时联调是后续工作。
+
+## 开发和验证
 
 ```bash
 npm install
-npm run dev          # Web 开发(0.0.0.0:5173)
-npm run build        # vue-tsc 类型检查 + 产物构建(唯一自动校验)
-npm run run:android  # 构建并跑安卓(Capacitor)
+npm run dev          # 默认 0.0.0.0:5173
+npm run build        # vue-tsc + Vite
+npx playwright install chromium
+npm test             # 隔离浏览器上下文，测试服务器 127.0.0.1:4174
+npm run run:android  # 需要 Android SDK / 设备
 ```
 
-- 唯一校验手段是 `npm run build`,改完必须跑一次;
-- 存储分平台:Web=Preferences JSON,安卓=SQLite(`product-store.ts` 是存储唯一入口);
-- 文件:Web 存 dataUrl,安卓存 `Directory.Data` 文件路径(`file-service.ts` 抽象)。
+已有 Chrome 时无需下载测试 Chromium：
 
-## 关联
+```bash
+# Git Bash
+PLAYWRIGHT_CHANNEL=chrome npm test
+# PowerShell
+$env:PLAYWRIGHT_CHANNEL='chrome'; npm test
+```
 
-- AgentMall 小程序:`../AgentMall`(DOC/99-进度跟踪/PROGRESS.md 为项目总进度)
+`tests/fixtures/shop-test.mp4` 是 FFmpeg testsrc2 生成的 6 秒合成测试素材，不包含真实店铺资料。测试覆盖真实 MP4 抽帧、取消/超时、移动端布局、校验、部分写入失败重试、普通编辑兼容和 CSV 下载。测试使用独立浏览器上下文，不操作日常浏览器商品数据。截图和失败跟踪写入已忽略的 `test-results/`。
+
+## 数据与接续
+
+- Web：Capacitor Preferences JSON，图片为 data URL；空间受浏览器限制。
+- 安卓：SQLite 与 `Directory.Data`；入口为 `product-store.ts`、`file-service.ts`。
+- 本项目进度与未完成项：[`DOC/PROGRESS.md`](DOC/PROGRESS.md)。
+- AgentMall 项目总进度：`../AgentMall/DOC/99-进度跟踪/PROGRESS.md`。

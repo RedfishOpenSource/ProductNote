@@ -1,7 +1,8 @@
 /**
  * AgentMall 导出桥:把本应用商品导出为店主端「批量导入」CSV。
  * CSV 格式(与店主端一致):名称,分类,价格(元),库存,单位
- * 分类自动映射到小程序五分类;无法识别的留空(店主端按未分类处理)。
+ * 无显式分类时按关键词建议五分类，未知留空。
+ * 注意：AgentMall 现有导入器尚不支持完整 CSV 引号/表头，且空数值会变零；不可直接整文件粘贴上线。
  */
 import type { Product } from '../types/product'
 import { exportFileBlob } from './file-service'
@@ -33,10 +34,10 @@ const CATEGORY_KEYWORDS: Array<[string, string[]]> = [
 
 /** 依据商品名关键词猜测 AgentMall 分类(未设置 category 时兜底) */
 export function mapCategoryByName(name: string): string {
-  for (const [category, keywords] of CATEGORY_KEYWORDS) {
-    if (keywords.some((keyword) => name.includes(keyword))) {
-      return category
-    }
+  // 先匹配用途/制冷特征，避免“办公桌/办公椅/冷藏操作台”被泛称截获。
+  for (const preferred of ['办公家具', '制冷冰柜', '厨房设备', '餐具器皿', '桌椅宴会']) {
+    const keywords = CATEGORY_KEYWORDS.find(([category]) => category === preferred)![1]
+    if (keywords.some((keyword) => name.includes(keyword))) return preferred
   }
   return ''
 }

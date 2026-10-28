@@ -46,6 +46,17 @@
           </section>
 
           <section class="panel-card form-section compact-card">
+            <div class="section-heading compact-heading"><h2>销售与库存</h2><p>可选填写。未知价格和库存请留空，不会自动补零。</p></div>
+            <div class="field-grid">
+              <label class="field-block"><span>分类</span><el-select v-model="form.category" placeholder="待确认" clearable><el-option v-for="category in formCategories" :key="category" :label="category" :value="category" /></el-select></label>
+              <label class="field-block"><span>库存数量</span><el-input v-model="form.quantityText" inputmode="numeric" placeholder="未知可留空" /></label>
+              <label class="field-block"><span>单位</span><el-input v-model="form.unit" maxlength="16" placeholder="例如：个、台、套" /></label>
+              <label class="field-block"><span>批发价（元）</span><el-input v-model="form.wholesalePriceText" inputmode="decimal" placeholder="可选，不含在 CSV 中" /></label>
+            </div>
+            <p v-if="salesFieldError" class="field-error" role="alert">{{ salesFieldError }}</p>
+          </section>
+
+          <section class="panel-card form-section compact-card">
             <div class="section-heading compact-heading">
               <h2>商品图片</h2>
               <p>可添加多张图片，左右滑动切换查看，列表和搜索默认使用第一张。</p>
@@ -197,6 +208,8 @@ import SwipeCarousel from '../components/SwipeCarousel.vue'
 import { consumePendingProductCreateDraft } from '../services/product-create-draft'
 import { deleteStoredFile, openStoredFile, resolveFileUrl, saveFile, savePhotoBlob } from '../services/file-service'
 import { createId } from '../services/id'
+import { AGENTMALL_CATEGORIES } from '../services/agentmall-export'
+import { parseOptionalPrice, parseOptionalQuantity } from '../services/product-entry-fields'
 import { deleteProduct, getProductById, saveProduct } from '../services/product-store'
 import { removeProductVisualIndex, upsertProductVisualIndex } from '../services/visual-search-service'
 import { getPrimaryProductImage, hasVideoFileExtension, isVideoMimeType, isVideoStoredFile, normalizeProductImages } from '../types/product'
@@ -226,6 +239,15 @@ const form = reactive({
   images: [] as StoredFile[],
   attachments: [] as StoredFile[],
   model3d: null as Product['model3d'],
+  category: '',
+  quantityText: '',
+  unit: '',
+  wholesalePriceText: '',
+})
+const formCategories = computed(() => [...new Set([...AGENTMALL_CATEGORIES, ...(form.category ? [form.category] : [])])])
+const salesFieldError = computed(() => {
+  try { parseOptionalQuantity(form.quantityText); parseOptionalPrice(form.wholesalePriceText, '批发价'); return '' }
+  catch (error) { return error instanceof Error ? error.message : '销售字段无效' }
 })
 
 const productId = computed(() => String(route.params.id ?? ''))
@@ -347,6 +369,10 @@ function fillForm(product: Product) {
   syncPrimaryImage()
   form.attachments = [...product.attachments]
   form.model3d = product.model3d
+  form.category = product.category ?? ''
+  form.quantityText = product.quantity == null ? '' : String(product.quantity)
+  form.unit = product.unit ?? ''
+  form.wholesalePriceText = product.wholesalePrice == null ? '' : String(product.wholesalePrice)
   createdAt.value = product.createdAt
 }
 
@@ -516,13 +542,14 @@ async function syncVisualIndex(product: Product) {
 }
 
 async function saveCurrentProduct() {
+  if (saving.value) return
   if (!form.name.trim()) {
     showToast('请先填写商品名称', 'warning')
     return
   }
 
-  if (priceError.value) {
-    showToast(priceError.value, 'warning')
+  if (priceError.value || salesFieldError.value) {
+    showToast(priceError.value || salesFieldError.value, 'warning')
     return
   }
 
@@ -541,6 +568,10 @@ async function saveCurrentProduct() {
       images: [...form.images],
       attachments: [...form.attachments],
       model3d: form.model3d,
+      category: form.category.trim(),
+      quantity: parseOptionalQuantity(form.quantityText),
+      unit: form.unit.trim(),
+      wholesalePrice: parseOptionalPrice(form.wholesalePriceText, '批发价'),
       createdAt: createdAt.value || now,
       updatedAt: now,
     }

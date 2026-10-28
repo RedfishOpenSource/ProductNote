@@ -15,6 +15,7 @@ const isNativePlatform = Capacitor.getPlatform() !== 'web'
 
 let sqlite: SQLiteConnection | null = null
 let database: SQLiteDBConnection | null = null
+let databasePromise: Promise<SQLiteDBConnection> | null = null
 
 function parseJsonValue<T>(value: unknown, fallback: T): T {
   if (!value) return fallback
@@ -66,8 +67,15 @@ function mapRowToVisualIndex(row: Record<string, unknown>) {
 
 async function ensureDatabase() {
   if (!isNativePlatform) return null
-  if (database) return database
+  // 并发读写必须等迁移完成，不能拿到尚未初始化的连接。
+  databasePromise ??= initializeDatabase().catch((error) => {
+    databasePromise = null
+    throw error
+  })
+  return databasePromise
+}
 
+async function initializeDatabase(): Promise<SQLiteDBConnection> {
   sqlite ??= new SQLiteConnection(CapacitorSQLite)
   const consistency = await sqlite.checkConnectionsConsistency()
   const hasConnection = (await sqlite.isConnection(DB_NAME, false)).result
@@ -92,7 +100,11 @@ async function ensureDatabase() {
       attachments_json TEXT NOT NULL,
       model_3d_json TEXT,
       created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      category TEXT,
+      quantity INTEGER,
+      unit TEXT,
+      wholesale_price REAL
     );
   `)
   await database.execute(`
@@ -105,26 +117,15 @@ async function ensureDatabase() {
     );
   `)
 
-  try {
-    await database.execute('ALTER TABLE products ADD COLUMN model_3d_json TEXT')
-  } catch {
-    // Column already exists on upgraded installs.
-  }
-  try {
-    await database.execute('ALTER TABLE products ADD COLUMN images_json TEXT')
-  } catch {
-    // Column already exists on upgraded installs.
-  }
-  for (const statement of [
-    'ALTER TABLE products ADD COLUMN category TEXT',
-    'ALTER TABLE products ADD COLUMN quantity INTEGER',
-    'ALTER TABLE products ADD COLUMN unit TEXT',
-    'ALTER TABLE products ADD COLUMN wholesale_price REAL',
+  const schema = await database.query('PRAGMA table_info(products)')
+  const existingColumns = new Set((schema.values ?? []).map((row) => String(row.name)))
+  for (const [name, type] of [
+    ['model_3d_json', 'TEXT'], ['images_json', 'TEXT'], ['category', 'TEXT'],
+    ['quantity', 'INTEGER'], ['unit', 'TEXT'], ['wholesale_price', 'REAL'],
   ]) {
-    try {
-      await database.execute(statement)
-    } catch {
-      // Column already exists on upgraded installs.
+    if (!existingColumns.has(name)) {
+      // 仅对缺失列迁移；磁盘/权限等异常必须传递给调用方，不能当作“列已存在”。
+      await database.execute(`ALTER TABLE products ADD COLUMN ${name} ${type}`)
     }
   }
 

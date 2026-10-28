@@ -14,14 +14,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Verification
 
-- There is no test runner or lint script configured in `package.json`.
-- The main automated verification currently available is `npm run build`.
+- Run `npm run build` (vue-tsc + Vite) after changes.
+- Run `npm test` for Playwright browser regressions; first install Chromium with `npx playwright install chromium`, or use installed Chrome via `PLAYWRIGHT_CHANNEL=chrome npm test` in Git Bash.
+- Tests use isolated browser contexts and a Vite server at `127.0.0.1:4174`; they do not touch the user's normal browser data. Native Android behavior still requires device validation.
+- There is no lint script. Read `DOC/PROGRESS.md` at the start and update it before ending a development session.
 
 ## Architecture
 
 - This is a Vue 3 + TypeScript + Vite app using Element Plus for UI and Capacitor for native device integration.
 - App bootstrap is minimal: `src/main.ts` creates the Vue app, installs `Element Plus` and the router, then mounts `src/App.vue`, which only hosts `router-view`.
-- Routing lives in `src/router/index.ts` and is intentionally small: `/` shows the product list, `/product/new` creates a product, and `/product/:id` edits an existing product using the same form page.
+- Routing lives in `src/router/index.ts`: `/` lists products; `/product/new` and `/product/:id` share the form; media/model routes cover product assets; `/video-entry` hosts offline batch candidate review.
 
 ## Product Flow
 
@@ -45,7 +47,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - `src/services/visual-search-service.ts` registers a custom Capacitor plugin named `VisualSearch` and only enables it on Android (`Capacitor.getPlatform() === 'android'`).
 - Visual search works by extracting labels from an image, storing per-product label indexes in `product_visual_index`, and ranking matches by label-overlap similarity.
-- The web app intentionally treats visual search as unsupported. If work touches this area, expect the native Android plugin implementation to matter even though it is not present in this repository.
+- Web/Android can fall back to JS image signatures for similarity, not semantic labels. The current repository does not contain a native `VisualSearch` implementation.
+- `isSemanticLabelingSupported()` checks runtime plugin availability. Never claim Android naming works just because the TypeScript interface exists; current Web naming is manual.
 
 ## Styling
 
@@ -56,5 +59,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Repository Notes
 
 - `src/components/HelloWorld.vue` 与 Vite 模板 SVG 是残留文件,可清理;
-- 2025-10 起本项目的使命是为 AgentMall 小程序采集商品:新增字段(分类/库存/单位/批发价)、`agentmall-export.ts` CSV 导出、`video-entry-service.ts` + `frame-dedup.ts` 视频批量录入服务(页面开发中);
-- `android/` 目录已在仓库中(含 VisualSearch/OfflineSpeech 插件的 Java 源码位置:MainActivity 同级),CLAUDE.md 旧版描述已过时。
+- 2026-10-28 接续：本项目为 AgentMall 采集商品；视频录入页面和四字段表单已实现，15 项浏览器回归通过，安卓和微信端仍未联调。详见 `DOC/PROGRESS.md`。
+- `android/` 已纳入仓库：当前 Java 文件为 `MainActivity` 和 `OfflineSpeechPlugin`，并无 VisualSearch 插件实现。
+- 空库存/价格表示未知，不可补零或擅自四舍五入；视频候选必须人工确认名称，失败重试沿用固定 ID。
+- CSV 只传五列，无图片/批发价；AgentMall 旧导入器存在表头/引号/空数值兼容问题，不能宣称销售端闭环已验证。
