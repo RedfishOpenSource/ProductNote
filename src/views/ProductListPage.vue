@@ -214,6 +214,10 @@
               <el-icon><Download /></el-icon>
               导出 PDF
             </el-button>
+            <el-button class="settings-action" @click="handleExportAgentMallCsv">
+              <el-icon><Box /></el-icon>
+              导出 AgentMall CSV
+            </el-button>
             <el-button class="settings-action" @click="openImportPicker">
               <el-icon><Upload /></el-icon>
               导入数据
@@ -251,6 +255,10 @@
           <button class="create-entry-card" type="button" :disabled="createEntryBusy" @click="startManualCreate">
             <strong>手动</strong>
             <span>直接打开新增表单页面</span>
+          </button>
+          <button class="create-entry-card" type="button" :disabled="createEntryBusy" @click="startVideoEntry">
+            <strong>视频批量</strong>
+            <span>拍一段逛店视频,自动生成商品</span>
           </button>
         </div>
       </div>
@@ -314,6 +322,7 @@ import { ElMessage } from 'element-plus'
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { importProducts } from '../services/backup-service'
+import { exportAgentMallCsv } from '../services/agentmall-export'
 import { exportProductsPdf } from '../services/product-pdf-export-service'
 import { deleteStoredFile, readImportFile, resolveFileUrl, saveFile, savePhotoBlob } from '../services/file-service'
 import { clearPendingProductCreateDraft, setPendingProductCreateDraft } from '../services/product-create-draft'
@@ -521,6 +530,11 @@ function startCreateWithDraft(draft: ProductCreateDraft | null = null): void {
 
 function startManualCreate(): void {
   startCreateWithDraft()
+}
+
+function startVideoEntry(): void {
+  closeCreateEntry()
+  router.push('/video-entry')
 }
 
 function openFileInput(input: HTMLInputElement | null): void {
@@ -984,6 +998,20 @@ function handleDrawerTouchEnd(): void {
 
   drawerDragging.value = false
   closeSettings()
+}
+
+async function handleExportAgentMallCsv(): Promise<void> {
+  try {
+    const products = await listProducts()
+    if (!products.length) {
+      showToast('还没有商品可导出', 'warning')
+      return
+    }
+    await exportAgentMallCsv(products)
+    showToast('AgentMall CSV 已导出,可到店主端批量导入')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '导出失败', 'danger')
+  }
 }
 
 async function handleExport(): Promise<void> {

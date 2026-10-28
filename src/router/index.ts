@@ -3,6 +3,7 @@ import ProductFormPage from '../views/ProductFormPage.vue'
 import ProductListPage from '../views/ProductListPage.vue'
 import ProductMediaPage from '../views/ProductMediaPage.vue'
 import ProductModelPage from '../views/ProductModelPage.vue'
+import VideoBatchEntryPage from '../views/VideoBatchEntryPage.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -11,6 +12,11 @@ const router = createRouter({
       path: '/',
       name: 'products',
       component: ProductListPage,
+    },
+    {
+      path: '/video-entry',
+      name: 'video-batch-entry',
+      component: VideoBatchEntryPage,
     },
     {
       path: '/product/new',
