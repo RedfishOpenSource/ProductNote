@@ -210,6 +210,10 @@
             <p>导入会覆盖当前商品数据。</p>
           </div>
           <div class="settings-action-stack">
+            <el-button class="settings-action" @click="handleExportBackup">
+              <el-icon><Box /></el-icon>
+              导出备份 JSON
+            </el-button>
             <el-button class="settings-action" :loading="exporting" @click="handleExport">
               <el-icon><Download /></el-icon>
               导出 PDF
@@ -321,7 +325,7 @@ import { Capacitor } from '@capacitor/core'
 import { ElMessage } from 'element-plus'
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { importProducts } from '../services/backup-service'
+import { exportBackup, importProducts } from '../services/backup-service'
 import { exportAgentMallCsv } from '../services/agentmall-export'
 import { exportProductsPdf } from '../services/product-pdf-export-service'
 import { deleteStoredFile, readImportFile, resolveFileUrl, saveFile, savePhotoBlob } from '../services/file-service'
@@ -998,6 +1002,22 @@ function handleDrawerTouchEnd(): void {
 
   drawerDragging.value = false
   closeSettings()
+}
+
+async function handleExportBackup(): Promise<void> {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    const products = await listProducts()
+    await exportBackup(products)
+    closeSettings()
+    showToast('备份 JSON 已导出，包含图片与四字段')
+  } catch (error) {
+    console.error(error)
+    showToast(error instanceof Error ? error.message : '导出备份失败，请稍后重试', 'danger')
+  } finally {
+    exporting.value = false
+  }
 }
 
 async function handleExportAgentMallCsv(): Promise<void> {

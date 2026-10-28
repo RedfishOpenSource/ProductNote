@@ -10,15 +10,19 @@ function cleanupValue(value: string): string {
   return value.replace(/[，。,；;：:]/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
-function extractAfterKeyword(text: string, keywords: string[]): string {
+function extractAfterKeyword(clauses: string[], keywords: string[]): string {
+  // 逐子句提取：不能从关键字取到全文结尾，否则多子句时字段吞掉后续内容。
   for (const keyword of keywords) {
-    const index = text.indexOf(keyword)
-    if (index === -1) continue
-    const value = cleanupValue(text.slice(index + keyword.length))
-      .replace(/^(是|叫|为)/, '')
-      .trim()
-    if (value) {
-      return value
+    for (const clause of clauses) {
+      const index = clause.indexOf(keyword)
+      if (index === -1) continue
+      const value = clause
+        .slice(index + keyword.length)
+        .replace(/^(是|叫|为)/, '')
+        .trim()
+      if (value) {
+        return value
+      }
     }
   }
 
@@ -50,8 +54,8 @@ export function buildDraftFromSpeechText(text: string): ProductCreateDraft {
   const phone = normalized.match(phonePattern)?.[0] ?? ''
   const priceText = extractPrice(normalized)
 
-  let supplierName = extractAfterKeyword(normalized, ['供应商', '供货商', '厂家', '店家'])
-  let name = extractAfterKeyword(normalized, ['商品名称', '商品', '名字', '名称'])
+  let supplierName = extractAfterKeyword(clauses, ['供应商', '供货商', '厂家', '店家'])
+  let name = extractAfterKeyword(clauses, ['商品名称', '商品', '名字', '名称'])
 
   if (!name && clauses.length > 0) {
     const firstClause = clauses[0]
@@ -66,7 +70,6 @@ export function buildDraftFromSpeechText(text: string): ProductCreateDraft {
       supplierName = supplierClause.replace(/.*(?:供应商|供货商|厂家|店家)/, '').trim()
     }
   }
-
   const descriptionClauses = clauses.filter((clause) => {
     if (name && clause.includes(name)) return false
     if (supplierName && clause.includes(supplierName)) return false

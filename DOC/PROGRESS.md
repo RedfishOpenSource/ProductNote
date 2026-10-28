@@ -13,7 +13,13 @@
 
 - `d076663`：可选商品字段、SQLite 初步迁移、视频抽帧/dHash、CSV 导出服务。
 - `d68f9db`：视频批量页面、路由、新增入口、列表设置导出 CSV。
-- 本轮（2026-10-28）修复与完善：
+- `8d82f81`：视频录入加固、未知值保留、15 项回归（详见 Git 历史）。
+- 本轮全面测试（2026-10-28 下午）：
+  - [x] **修复备份功能缺失**：原来只能导入备份、无法导出（`exportBackupText`/`BackupPayload` 无调用方）。新增 `buildBackupPayload`/`exportBackup`，设置页加「导出备份 JSON」，含内嵌图片与四字段。
+  - [x] **修复语音草稿跨子句吞字**：`extractAfterKeyword` 原从关键字取到全文结尾，多子句时供应商/名称字段吞掉后续整句；改为逐子句提取。
+  - [x] 新增 `tests/app.spec.js` 10 项：CRUD 四字段全流程、备份导出→导入回环、旧版 v1 备份兼容、空库导出报错、CSV/PDF 下载、视图模式与搜索历史持久化、Web 图片搜索签名降级召回、3D GLB 生成、媒体/模型页状态。
+  - [x] **安卓 APK 编译通过**：用本机缓存 Gradle 8.12（wrapper 的 8.2.1 下载因网络 SSL 失败，缓存为 0 字节）+ AGP 8.2.1 在线解析，`cap sync` + `assembleDebug` 成功，APK 含最新 bundle；无设备，运行时未验证。
+  - [x] 用户测试服务（5173）已按用户要求关闭；测试自行拉起 4174 并自动回收。
   - [x] 加载元数据/定位有超时和取消，首帧等待解码就绪，失败也释放视频/canvas/对象 URL。
   - [x] 每次最多 60 候选、最多 1800 采样点、最长边上限及图片占用上限；到达候选上限提示分段。
   - [x] 使用共用数值校验：空库存/价格为 `null`；显式 `0` 保留；拒绝无效价、小数库存、负数和不安全整数。
@@ -26,22 +32,24 @@
   - [x] CSV 分类优先用途/制冷关键词，修复办公桌椅/冷藏操作台误分类；保留未知值、BOM、引号和换行。
   - [x] 新增 Playwright 配置、15 项浏览器回归和合成 MP4 素材；同步 README/CLAUDE.md 的真实状态。
 
-## 验证结果
+## 验证结果（2026-10-28 全面测试后）
 
-- `PLAYWRIGHT_CHANNEL=chrome npm test`：15 项通过（本机 Chrome，无头浏览器；不是安卓真机）。
-- 覆盖：可选字段校验，真实 6 秒 MP4 的 0/2/4 秒抽帧，尺寸，dHash，帧上限，加载和定位的超时/取消，页面取消，390px 布局，空值和零，CSV 下载/转义/分类，写前/写后部分失败重试，普通编辑和旧记录，分批保存，退出草稿。
-- `npm run build`：vue-tsc/Vite 通过；已有大 bundle 和依赖注释警告，未优化包体。
-- 测试独立上下文和端口 4174；日常浏览器的商品未用于测试。
-- 用户测试用 Vite `http://localhost:5173/` 本轮检查返回 HTTP 200；进程不保证跨重启存活，可 `npm run dev` 重启。
+- **Playwright 25 项全部通过**（本机 Chrome 无头；隔离上下文，端口 4174 自动拉起/回收）：
+  - `app.spec.js`（10）：语音草稿逐子句解析；新建→列表→编辑回显→删除全流程（含分类下拉/图片上传/四字段）；备份导出 JSON（含 base64 图片+四字段）→篡改数据→导入完整恢复；v1 旧备份（无四字段/无 images 数组）兼容导入；空库导出报错；设置页 CSV（分类推断+空值）；PDF 下载（%PDF- 头+体积）；卡片/短视频模式与搜索历史持久化；同图搜索召回（JS 签名降级）；GLB 生成（photos/2 源/二进制）与媒体/模型/404 页状态。
+  - `video-entry.spec.js`（15）：上一轮全部保留通过。
+- `npm run build`：vue-tsc/Vite 通过。
+- **安卓编译验证**：`npx cap sync android` + `gradle assembleDebug` 成功（Gradle 8.12 离线增量+首次在线拉取 AGP 8.2.1）；产物 `android/app/build/outputs/apk/debug/app-debug.apk`（≈15.2MB）内嵌最新 bundle。**仅编译验证，未在设备运行**；wrapper 8.2.1 在本机因网络问题下载失败，用缓存 Gradle 8.12 绕过，未改仓库配置。
+- 端口 5173/4174 已确认无监听，测试进程不残留。
 
 ## 已核实边界（必须如实描述）
 
 1. **抽帧不是商品检测**：一帧可含多件商品、同一商品会重复，不能保证全店无遗漏；仍需人工核对和补录。
-2. 当前原生 Java 仅有 MainActivity/OfflineSpeechPlugin，**没有 VisualSearch 实现**。有运行时插件才可能拿到语义标签；Web 和当前源码不能承诺自动识别名称。JS 图像签名只是相似匹配。
+2. 原生 Java 仅有 MainActivity/OfflineSpeechPlugin，**没有 VisualSearch 实现**。有运行时插件才可能拿到语义标签；Web 和当前源码不能承诺自动识别名称。JS 图像签名只是相似匹配（本轮已实测同图召回可用，跨图效果未评估）。
 3. CSV 仅有 `名称,分类,价格(元),库存,单位`，无图片、描述或批发价。
 4. **AgentMall 现有导入器尚未兼容完整 CSV**：表头可能被当作商品、简单 split 无法处理引号/逗号/换行，空数值会变零。导出只能算待核对清单；不要整文件粘贴上架。
-5. SQLite 新旧安装迁移、安卓选/拍视频、WebView 解码、文件清理尚未真机测试。
+5. SQLite 真机迁移、安卓选/拍视频、WebView 解码、文件清理仍待真机测试；本轮仅到编译+打包层面。
 6. Web Preferences 存图片可能达到浏览器配额；会显示保存失败并支持固定 ID 重试，不能保证任意长视频全部入库。
+7. PDF 分页逻辑对超长清单未做逐页裁剪验证（本轮仅验证单页场景可下载）。
 
 ## 下次优先工作（按顺序）
 
@@ -54,9 +62,10 @@
 
 - 视频：`src/views/VideoBatchEntryPage.vue`、`src/services/video-entry-service.ts`、`frame-dedup.ts`。
 - 校验/表单：`product-entry-fields.ts`、`src/views/ProductFormPage.vue`。
-- 持久化：`product-store.ts`、`file-service.ts`。
+- 持久化/备份：`product-store.ts`、`file-service.ts`、`backup-service.ts`（含导出）。
 - 导出/入口：`agentmall-export.ts`、`ProductListPage.vue`、`src/router/index.ts`。
-- 回归：`tests/video-entry.spec.js`、`tests/fixtures/shop-test.mp4`、`playwright.config.js`。
+- 回归：`tests/app.spec.js`、`tests/video-entry.spec.js`、`tests/fixtures/`、`playwright.config.js`。
+- 安卓：Gradle 8.12 缓存绕过方式见「验证结果」；wrapper 属性未改动。
 
 ## 日期与现场提醒
 
