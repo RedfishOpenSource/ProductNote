@@ -51,6 +51,14 @@ export interface Product {
   model3d: ProductModel3D | null
   createdAt: string
   updatedAt: string
+  /** AgentMall 分类(五分类之一,可空=未分类) */
+  category?: string
+  /** 库存/数量(可空=未填) */
+  quantity?: number | null
+  /** 单位(个/台/张/箱) */
+  unit?: string
+  /** 批发价(元,可空) */
+  wholesalePrice?: number | null
 }
 
 export interface BackupFile extends StoredFile {

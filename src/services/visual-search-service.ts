@@ -230,6 +230,17 @@ export function isVisualSearchSupported(): boolean {
   return hasNativeVisualSearch() || canUseFallbackVisualSearch()
 }
 
+/** 提取任意已存图片的标签(仅安卓原生插件;Web/失败返回空数组,不阻塞调用方) */
+export async function extractLabelsForFile(file: StoredFile): Promise<VisualLabel[]> {
+  if (!hasNativeVisualSearch()) return []
+  try {
+    const result = await extractLabelsFromStoredFile(file)
+    return result.labels
+  } catch {
+    return []
+  }
+}
+
 export async function getVisualModelInfo(): Promise<VisualModelInfo> {
   if (hasNativeVisualSearch()) {
     return VisualSearch.getModelInfo()

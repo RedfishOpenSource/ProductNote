@@ -55,6 +55,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Notes
 
-- `README.md` is still the default Vite/Vue starter README and does not document this app.
-- `src/components/HelloWorld.vue` and the Vite SVG assets are starter-template leftovers and are not part of the product-management flow.
-- There is currently no checked-in `android/` project directory, even though Capacitor Android commands are configured in `package.json`.
+- `src/components/HelloWorld.vue` 与 Vite 模板 SVG 是残留文件,可清理;
+- 2025-10 起本项目的使命是为 AgentMall 小程序采集商品:新增字段(分类/库存/单位/批发价)、`agentmall-export.ts` CSV 导出、`video-entry-service.ts` + `frame-dedup.ts` 视频批量录入服务(页面开发中);
+- `android/` 目录已在仓库中(含 VisualSearch/OfflineSpeech 插件的 Java 源码位置:MainActivity 同级),CLAUDE.md 旧版描述已过时。

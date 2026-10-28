@@ -44,6 +44,13 @@ function mapRowToProduct(row: Record<string, unknown>) {
     model3d: parseJsonValue<Product['model3d']>(row.model_3d_json, null),
     createdAt: String(row.created_at ?? ''),
     updatedAt: String(row.updated_at ?? ''),
+    category: String(row.category ?? ''),
+    quantity: row.quantity === null || row.quantity === undefined ? null : Number(row.quantity),
+    unit: String(row.unit ?? ''),
+    wholesalePrice:
+      row.wholesale_price === null || row.wholesale_price === undefined
+        ? null
+        : Number(row.wholesale_price),
   } satisfies Product
 }
 
@@ -108,6 +115,18 @@ async function ensureDatabase() {
   } catch {
     // Column already exists on upgraded installs.
   }
+  for (const statement of [
+    'ALTER TABLE products ADD COLUMN category TEXT',
+    'ALTER TABLE products ADD COLUMN quantity INTEGER',
+    'ALTER TABLE products ADD COLUMN unit TEXT',
+    'ALTER TABLE products ADD COLUMN wholesale_price REAL',
+  ]) {
+    try {
+      await database.execute(statement)
+    } catch {
+      // Column already exists on upgraded installs.
+    }
+  }
 
   return database
 }
@@ -121,6 +140,10 @@ function normalizeProduct(product: Product): Product {
     images,
     attachments: product.attachments ?? [],
     model3d: product.model3d ?? null,
+    category: product.category ?? '',
+    quantity: product.quantity ?? null,
+    unit: product.unit ?? '',
+    wholesalePrice: product.wholesalePrice ?? null,
   }
 }
 
@@ -184,8 +207,9 @@ export async function saveProduct(product: Product) {
   await db!.run(
     `INSERT OR REPLACE INTO products (
       id, name, price, description, supplier_name, supplier_phone,
-      image_json, images_json, attachments_json, model_3d_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      image_json, images_json, attachments_json, model_3d_json, created_at, updated_at,
+      category, quantity, unit, wholesale_price
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       normalizedProduct.id,
       normalizedProduct.name,
@@ -199,6 +223,10 @@ export async function saveProduct(product: Product) {
       normalizedProduct.model3d ? JSON.stringify(normalizedProduct.model3d) : null,
       normalizedProduct.createdAt,
       normalizedProduct.updatedAt,
+      normalizedProduct.category ?? '',
+      normalizedProduct.quantity ?? null,
+      normalizedProduct.unit ?? '',
+      normalizedProduct.wholesalePrice ?? null,
     ],
   )
 }
