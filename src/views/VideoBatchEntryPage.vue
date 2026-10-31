@@ -30,8 +30,8 @@
 
       <section v-if="stage === 'review'" class="panel-card form-section" :aria-busy="saving">
         <h2>3. 确认候选商品</h2>
-        <p>共 {{ candidates.length }} 张，待入库已选 {{ selectedCount }} 件，已保存 {{ savedCount }} 件。</p>
-        <p class="muted-tip">{{ namingSupported ? '标签仅为名称建议，请核实。' : '当前设备未提供语义标签，请手动填写商品名称。' }}价格、库存可留空表示未知；不会从视频猜测。</p>
+        <p>共 {{ candidates.length }} 张，待入库已选 {{ selectedCount }} 件，已保存 {{ savedCount }} 件<span v-if="dedupLog.length">，已去重 {{ dedupLog.length }} 件</span><span v-if="analyzingSimilarity">，画面相似度分析中…</span>。</p>
+        <p class="muted-tip">{{ namingSupported ? '标签仅为名称建议，请核实。' : '当前设备未提供语义标签，已自动赋「待命名-编号」占位名（不是识别结果），入库后请在商品列表改名核实。' }}价格、库存可留空表示未知；不会从视频猜测。</p>
         <p v-if="frameLimitReached" role="status" class="warning-tip">已达到 60 张候选上限，视频后段可能未扫描，请分段补录。</p>
         <div class="bulk-bar">
           <el-checkbox v-model="allChecked" :indeterminate="partlyChecked" :disabled="saving || !editableCount">全选</el-checkbox>
@@ -52,7 +52,7 @@
                 <el-checkbox v-model="candidate.checked" :disabled="saving || candidate.saved" :aria-label="`选择候选 ${index + 1}`">{{ candidate.saved ? '已入库' : `候选 ${index + 1}` }}</el-checkbox>
                 <el-button link type="danger" :disabled="saving || candidate.saved" @click="removeCandidate(candidate.id)">删除候选</el-button>
               </div>
-              <label class="field-block"><span>商品名称 *</span><el-input v-model="candidate.name" :disabled="saving || candidate.saved" placeholder="核对后填写商品名称" maxlength="100" @input="candidate.autoNamed = false; candidate.error = ''" /></label>
+              <label class="field-block"><span>商品名称 *</span><el-input v-model="candidate.name" :disabled="saving || candidate.saved" placeholder="核对后填写商品名称" maxlength="100" @input="candidate.autoNamed = false; candidate.error = ''; candidate.duplicate = null" /></label>
               <div class="candidate-row">
                 <label class="field-block"><span>价格（元）</span><el-input v-model="candidate.priceText" :disabled="saving || candidate.saved" inputmode="decimal" placeholder="未知可留空" @input="candidate.error = ''" /></label>
                 <label class="field-block"><span>库存</span><el-input v-model="candidate.quantityText" :disabled="saving || candidate.saved" inputmode="numeric" placeholder="未知可留空" @input="candidate.error = ''" /></label>
@@ -63,11 +63,21 @@
                 <label class="field-block"><span>批发价（元）</span><el-input v-model="candidate.wholesalePriceText" :disabled="saving || candidate.saved" inputmode="decimal" placeholder="可选，不含在 CSV 中" @input="candidate.error = ''" /></label>
               </div>
               <p v-if="candidate.error" role="alert" class="field-error">{{ candidate.error }}</p>
+              <p v-if="candidate.duplicate" role="status" class="duplicate-tip">与{{ candidate.duplicate.matchedLabel }}「{{ candidate.duplicate.matchedName }}」重复，本次未入库；改名后可重新入库。</p>
+              <p v-if="candidate.similarExisting.length || candidate.similarBatch.length" role="status" class="similar-tip">画面相似：{{ similarText(candidate) }}。是否入库由您勾选决定。</p>
             </div>
           </article>
         </div>
         <p v-if="!candidates.length">暂无候选，请换视频重试。</p>
         <p v-if="saveError" role="alert" class="field-error">{{ saveError }}</p>
+      </section>
+
+      <section v-if="dedupLog.length && (stage === 'review' || stage === 'done')" class="panel-card form-section" aria-label="去重报告">
+        <h2>去重报告（{{ dedupLog.length }} 件未入库）</h2>
+        <p class="muted-tip">按商品名称精确匹配判定重复；重复候选未写入商品，改名后可重新入库。</p>
+        <ul class="dedup-list">
+          <li v-for="entry in dedupLog" :key="entry.seq">候选 {{ entry.candidateIndex }}「{{ entry.candidateName }}」与{{ entry.matchedLabel }}「{{ entry.matchedName }}」重复</li>
+        </ul>
       </section>
 
       <section v-if="stage === 'done'" class="panel-card form-section">
@@ -99,8 +109,16 @@ import { AGENTMALL_CATEGORIES, exportAgentMallCsv } from '../services/agentmall-
 import { deleteStoredFile, savePhotoBlob } from '../services/file-service'
 import { createId } from '../services/id'
 import { parseOptionalPrice, parseOptionalQuantity } from '../services/product-entry-fields'
-import { getProductById, saveProduct } from '../services/product-store'
-import { extractLabelsForFile, isSemanticLabelingSupported } from '../services/visual-search-service'
+import { getProductById, listProducts, saveProduct } from '../services/product-store'
+import {
+  calculateImageSimilarity,
+  extractLabelsForFile,
+  findSimilarProductsByImage,
+  IMAGE_SIMILARITY_THRESHOLD,
+  isSemanticLabelingSupported,
+  storedFileFromDataUrl,
+  type SimilarProductHint,
+} from '../services/visual-search-service'
 import { extractCandidateFrames, suggestNameFromLabels } from '../services/video-entry-service'
 import type { ExtractedFrame } from '../services/video-entry-service'
 import type { Product, StoredFile } from '../types/product'
@@ -121,6 +139,23 @@ interface CandidateItem {
   saved: boolean
   error: string
   createdAt: string
+  duplicate: DuplicateMatch | null
+  /** 上次写入结果不确定（可能已按固定 ID 落库），重试时必须豁免名称去重。 */
+  saveFailed: boolean
+  similarExisting: SimilarProductHint[]
+  similarBatch: BatchSimilarRef[]
+}
+interface BatchSimilarRef {
+  index: number
+  name: string
+}
+/** 去重报告条目：记录候选与哪条商品重复，不静默丢弃。 */
+interface DuplicateMatch {
+  seq: number
+  candidateIndex: number
+  candidateName: string
+  matchedLabel: string
+  matchedName: string
 }
 const router = useRouter()
 const stage = ref<Stage>('pick')
@@ -140,6 +175,9 @@ const saving = ref(false)
 const exporting = ref(false)
 const saveError = ref('')
 const savedProducts = ref<Product[]>([])
+const dedupLog = ref<DuplicateMatch[]>([])
+let dedupSeq = 0
+const analyzingSimilarity = ref(false)
 const namingSupported = isSemanticLabelingSupported()
 let controller: AbortController | null = null
 let generation = 0
@@ -172,6 +210,10 @@ function handleVideoPicked(event: Event): void {
   videoFile.value = file
   videoFileName.value = file.name
   extractError.value = ''
+}
+/** 占位名取自候选固定 ID 的随机段：跨批次唯一，不会误触发同名去重；重试沿用同一 ID，占位名稳定。 */
+function defaultCandidateName(id: string): string {
+  return `待命名-${(id.split('-').pop() ?? '000000').toUpperCase()}`
 }
 function dataUrlToBlob(dataUrl: string): Blob {
   const [meta, base64] = dataUrl.split(',')
@@ -218,12 +260,16 @@ async function startExtraction(): Promise<void> {
     })
     if (disposed || signal.aborted || run !== generation) return
     if (!frames.length) throw new Error('没有提取到候选画面，请换视频重试')
-    candidates.value = frames.map((frame) => ({
-      id: createId('product'), checked: true, name: '', priceText: '', quantityText: '', wholesalePriceText: '',
-      unit: defaultUnit.value.trim() || '个', category: '', file: null, frame, autoNamed: true, saved: false, error: '', createdAt: '',
-    }))
+    candidates.value = frames.map((frame) => {
+      const id = createId('product')
+      return {
+        id, checked: true, name: defaultCandidateName(id), priceText: '', quantityText: '', wholesalePriceText: '',
+        unit: defaultUnit.value.trim() || '个', category: '', file: null, frame, autoNamed: true, saved: false, error: '', createdAt: '', duplicate: null, saveFailed: false, similarExisting: [], similarBatch: [],
+      }
+    })
     stage.value = 'review'
     void enhanceNames(run)
+    void analyzeSimilarities(run)
   } catch (error) {
     if (disposed) return
     extractError.value = error instanceof Error && error.name === 'AbortError' ? '' : error instanceof Error ? error.message : '抽帧失败'
@@ -249,6 +295,49 @@ async function enhanceNames(run: number): Promise<void> {
     } catch { /* 建议失败不阻塞人工录入。 */ }
   }
 }
+/** 画面相似度仅提示不改勾选：与已有商品及本批次先出现候选对比，是否入库由用户勾选决定。 */
+async function analyzeSimilarities(run: number): Promise<void> {
+  if (!candidates.value.length) return
+  analyzingSimilarity.value = true
+  let existing: Product[] = []
+  try {
+    existing = await listProducts()
+  } catch {
+    existing = []
+  }
+  for (let index = 0; index < candidates.value.length; index += 1) {
+    if (disposed || generation !== run || stage.value !== 'review') break
+    const item = candidates.value[index]
+    if (item.saved) continue
+    const frameFile = storedFileFromDataUrl(item.frame.dataUrl, `frame-${item.frame.timestampSeconds}s.jpg`)
+    try {
+      const hints = await findSimilarProductsByImage(frameFile, existing)
+      if (disposed || generation !== run) break
+      item.similarExisting = hints
+    } catch {
+      item.similarExisting = []
+    }
+    const batch: BatchSimilarRef[] = []
+    for (let before = 0; before < index; before += 1) {
+      const other = candidates.value[before]
+      if (other.saved) continue
+      try {
+        const score = await calculateImageSimilarity(frameFile, storedFileFromDataUrl(other.frame.dataUrl, `frame-${other.frame.timestampSeconds}s.jpg`))
+        if (score >= IMAGE_SIMILARITY_THRESHOLD) batch.push({ index: before + 1, name: other.name })
+      } catch { /* 忽略单对失败 */ }
+    }
+    if (disposed || generation !== run) break
+    item.similarBatch = batch
+  }
+  if (!disposed && generation === run) analyzingSimilarity.value = false
+}
+
+function similarText(item: CandidateItem): string {
+  const parts = item.similarExisting.map((hint) => `已有商品「${hint.productName}」相似度 ${Math.round(hint.score * 100)}%`)
+  parts.push(...item.similarBatch.map((ref) => `与本批次候选 ${ref.index}「${ref.name}」画面相似`))
+  return parts.join('；')
+}
+
 async function removeCandidate(id: string): Promise<void> {
   if (saving.value) return
   const item = candidates.value.find((candidate) => candidate.id === id)
@@ -277,9 +366,64 @@ async function saveSelected(): Promise<void> {
   if (saving.value) return
   const selected = candidates.value.filter((item) => item.checked && !item.saved)
   if (!selected.length) return
+  saving.value = true
+  generation += 1
+  saveError.value = ''
+  // 按名称精确匹配去重：与库中已有商品或本批次先出现的候选同名即视为重复；写入去重报告，不静默跳过。
+  let existing: Product[]
+  try {
+    existing = await listProducts()
+  } catch {
+    saving.value = false
+    saveError.value = '去重检查失败：无法读取已有商品，本次未保存任何商品，请重试'
+    ElMessage.error(saveError.value)
+    return
+  }
+  const knownNames = new Map<string, { label: string; name: string }>()
+  for (const product of existing) {
+    const name = product.name.trim()
+    if (name && !knownNames.has(name)) knownNames.set(name, { label: '已有商品', name })
+  }
+  const duplicates = new Map<string, DuplicateMatch>()
+  const batchNames = new Map<string, { label: string; name: string }>()
+  for (const item of selected) {
+    const name = item.name.trim()
+    const index = candidates.value.indexOf(item) + 1
+    if (item.saveFailed) {
+      // 上次写入结果不确定，重试沿用固定 ID 覆盖自身，不参与名称去重。
+      batchNames.set(name, { label: `本批次候选 ${index}`, name })
+      continue
+    }
+    const existingMatch = knownNames.get(name)
+    const batchMatch = batchNames.get(name)
+    if (existingMatch || batchMatch) {
+      duplicates.set(item.id, {
+        seq: ++dedupSeq,
+        candidateIndex: index,
+        candidateName: name,
+        matchedLabel: existingMatch ? '已有商品' : batchMatch!.label,
+        matchedName: existingMatch ? existingMatch.name : batchMatch!.name,
+      })
+      continue
+    }
+    batchNames.set(name, { label: `本批次候选 ${index}`, name })
+  }
+  const toSave = selected.filter((item) => !duplicates.has(item.id))
+  for (const item of selected) {
+    const match = duplicates.get(item.id)
+    if (!match) continue
+    item.checked = false
+    item.duplicate = match
+    dedupLog.value.push(match)
+  }
+  if (!toSave.length) {
+    saving.value = false
+    ElMessage({ type: 'info', message: `所选 ${selected.length} 件全部重复，未新增商品，详见去重报告`, grouping: true, duration: 2400 })
+    return
+  }
   let valid = true
   const parsed = new Map<string, { price: number | null; quantity: number | null; wholesalePrice: number | null }>()
-  for (const item of selected) {
+  for (const item of toSave) {
     item.error = ''
     try {
       if (!item.name.trim()) throw new Error('请确认并填写商品名称，不能直接保存未命名候选')
@@ -287,20 +431,18 @@ async function saveSelected(): Promise<void> {
     } catch (error) { item.error = error instanceof Error ? error.message : '字段无效'; valid = false }
   }
   if (!valid) {
+    saving.value = false
     ElMessage({ type: 'warning', message: '请先修正所选商品中的错误，尚未写入任何商品', grouping: true, duration: 1800 })
     return
   }
-  saving.value = true
-  generation += 1
-  saveError.value = ''
   try {
-    for (const item of selected) {
+    for (const item of toSave) {
       const file = await ensureImage(item)
       const now = new Date().toISOString()
       item.createdAt ||= now
       const product: Product = {
         id: item.id, name: item.name.trim(), ...parsed.get(item.id)!,
-        description: `视频来源：${videoFileName.value}，时间点 ${item.frame.timestampSeconds}s（人工确认）`,
+        description: `视频来源：${videoFileName.value}，时间点 ${item.frame.timestampSeconds}s，名称${item.autoNamed ? '为自动占位、待改名核实' : '经人工确认'}`,
         supplierName: '', supplierPhone: '', image: file, images: [file], attachments: [], model3d: null,
         createdAt: item.createdAt, updatedAt: now, category: item.category, unit: item.unit.trim() || '个',
       }
@@ -310,6 +452,7 @@ async function saveSelected(): Promise<void> {
         const exists = await getProductById(item.id).catch(() => undefined)
         if (exists === null) protectedPaths.delete(file.path)
         item.error = '入库未完成，请重试；会沿用同一商品 ID，不重复新增'
+        item.saveFailed = true
         throw error
       }
       temporaryFiles.delete(file.path)
@@ -318,7 +461,9 @@ async function saveSelected(): Promise<void> {
       savedProducts.value.push(product)
     }
     stage.value = candidates.value.some((item) => !item.saved) ? 'review' : 'done'
-    ElMessage.success(`本次保存 ${selected.length} 件，累计入库 ${savedCount.value} 件商品`)
+    ElMessage.success(duplicates.size
+      ? `本次保存 ${toSave.length} 件，${duplicates.size} 件因重复未入库（见去重报告），累计入库 ${savedCount.value} 件商品`
+      : `本次保存 ${toSave.length} 件，累计入库 ${savedCount.value} 件商品`)
   } catch (error) {
     saveError.value = `本批次已保存 ${savedCount.value} 件；未完成项可重试。${error instanceof Error ? error.message : '保存失败'}`
     ElMessage.error(saveError.value)
@@ -368,6 +513,9 @@ onBeforeUnmount(() => { disposed = true; generation += 1; controller?.abort(); v
 .category-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .form-section .field-error { color: #c00000; margin: 6px 0; }
 .form-section .warning-tip { color: #996300; }
+.form-section .duplicate-tip { color: #996300; margin: 6px 0; }
+.form-section .similar-tip { color: #1f5fa9; margin: 6px 0; }
+.dedup-list { margin: 0; padding-left: 18px; display: grid; gap: 4px; color: var(--app-text-secondary); font-size: 13px; line-height: 1.6; }
 .bottom-bar { position: fixed; z-index: 5; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; gap: 8px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); background: var(--app-card); box-shadow: 0 -2px 12px #00000012; }
 .bottom-bar .el-button { flex: 1; max-width: 400px; }
 .hidden-input { display: none; }

@@ -5,16 +5,21 @@ const LIST_UI_STORAGE_KEY = 'product_item_list_ui'
 const MAX_HISTORY_COUNT = 10
 const DEFAULT_VIEW_MODE: ViewMode = 'card'
 const VALID_VIEW_MODES: ViewMode[] = ['card', 'feed']
+export type ListSortOrder = 'similar' | 'recent'
+/** 列表默认按画面相似度排序（相似商品相邻，便于发现重复）；'recent' 为按更新时间。 */
+const DEFAULT_SORT_ORDER: ListSortOrder = 'similar'
 
 interface ListUiState {
   viewMode: ViewMode
   searchHistory: string[]
+  sortOrder: ListSortOrder
 }
 
 function createDefaultState(): ListUiState {
   return {
     viewMode: DEFAULT_VIEW_MODE,
     searchHistory: [],
+    sortOrder: DEFAULT_SORT_ORDER,
   }
 }
 
@@ -28,6 +33,10 @@ function normalizeKeywordKey(keyword: string): string {
 
 function normalizeViewMode(mode: unknown): ViewMode {
   return VALID_VIEW_MODES.includes(mode as ViewMode) ? (mode as ViewMode) : DEFAULT_VIEW_MODE
+}
+
+function normalizeSortOrder(order: unknown): ListSortOrder {
+  return order === 'recent' ? 'recent' : DEFAULT_SORT_ORDER
 }
 
 function normalizeHistory(history: unknown): string[] {
@@ -68,6 +77,7 @@ async function readState(): Promise<ListUiState> {
     return {
       viewMode: normalizeViewMode(parsed.viewMode),
       searchHistory: normalizeHistory(parsed.searchHistory),
+      sortOrder: normalizeSortOrder(parsed.sortOrder),
     }
   } catch {
     return createDefaultState()
@@ -78,6 +88,25 @@ async function writeState(state: ListUiState): Promise<void> {
   await Preferences.set({
     key: LIST_UI_STORAGE_KEY,
     value: JSON.stringify(state),
+  })
+}
+
+export async function getListSortOrder(): Promise<ListSortOrder> {
+  const state = await readState()
+  return state.sortOrder
+}
+
+export async function setListSortOrder(order: ListSortOrder): Promise<void> {
+  const state = await readState()
+  const nextSortOrder = normalizeSortOrder(order)
+
+  if (state.sortOrder === nextSortOrder) {
+    return
+  }
+
+  await writeState({
+    ...state,
+    sortOrder: nextSortOrder,
   })
 }
 

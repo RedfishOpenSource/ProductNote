@@ -61,5 +61,5 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `src/components/HelloWorld.vue` 与 Vite 模板 SVG 是残留文件,可清理;
 - 2026-10-28 接续：本项目为 AgentMall 采集商品；视频录入页面和四字段表单已实现，15 项浏览器回归通过，安卓和微信端仍未联调。详见 `DOC/PROGRESS.md`。
 - `android/` 已纳入仓库：当前 Java 文件为 `MainActivity` 和 `OfflineSpeechPlugin`，并无 VisualSearch 插件实现。
-- 空库存/价格表示未知，不可补零或擅自四舍五入；视频候选必须人工确认名称，失败重试沿用固定 ID。
+- 空库存/价格表示未知，不可补零或擅自四舍五入；视频候选默认自动赋全局唯一「待命名-编号」占位名（2026-10-31 用户确认改为默认赋名；占位名不是识别结果，需提示入库后改名核实，且不得与同名去重误判冲突），失败重试沿用固定 ID。
 - CSV 只传五列，无图片/批发价；AgentMall 旧导入器存在表头/引号/空数值兼容问题，不能宣称销售端闭环已验证。

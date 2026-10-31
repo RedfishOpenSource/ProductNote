@@ -334,6 +334,112 @@ export async function ensureVisualIndexes(products: Product[]): Promise<number> 
   return ensurePromise
 }
 
+/** 画面相似度阈值：≥ 此值视为“画面相似”，仅提示，由用户决定是否入库；排序仅聚类。 */
+export const IMAGE_SIMILARITY_THRESHOLD = 0.7
+
+export interface SimilarProductHint {
+  productId: string
+  productName: string
+  score: number
+}
+
+/** 从画面 dataUrl 构造仅内存用的 StoredFile：path 以 data: 开头，各平台 resolveFileUrl 都能直接返回。 */
+export function storedFileFromDataUrl(dataUrl: string, name = 'frame.jpg'): StoredFile {
+  return { path: dataUrl, name, mimeType: 'image/jpeg', size: dataUrl.length, kind: 'image' }
+}
+
+/** 两张图片的画面相似度（0..1）。统一用 JS 签名（平均哈希+颜色直方图），不是语义识别。 */
+export async function calculateImageSimilarity(left: StoredFile, right: StoredFile): Promise<number> {
+  if (!canUseFallbackVisualSearch()) return 0
+  try {
+    const [leftSignature, rightSignature] = await Promise.all([
+      getFallbackSignature(left),
+      getFallbackSignature(right),
+    ])
+    return calculateFallbackSimilarity(leftSignature, rightSignature)
+  } catch {
+    return 0
+  }
+}
+
+/** 找出与给定画面相似的商品（主图对比）；失败返回空数组，不阻塞录入。 */
+export async function findSimilarProductsByImage(
+  file: StoredFile,
+  products: Product[],
+  threshold: number = IMAGE_SIMILARITY_THRESHOLD,
+): Promise<SimilarProductHint[]> {
+  if (!canUseFallbackVisualSearch()) return []
+  const hints: SimilarProductHint[] = []
+  try {
+    const querySignature = await getFallbackSignature(file)
+    for (const product of products) {
+      const image = getPrimaryProductImage(product)
+      if (!image) continue
+      try {
+        const signature = await getFallbackSignature(image)
+        const score = calculateFallbackSimilarity(querySignature, signature)
+        if (score >= threshold) hints.push({ productId: product.id, productName: product.name, score })
+      } catch { /* 单个商品图片失败不阻塞整体 */ }
+    }
+  } catch {
+    return []
+  }
+  return hints.sort((left, right) => right.score - left.score)
+}
+
+/**
+ * 按画面相似度聚类排序（贪心链式分组）：首见商品锚定一组，与其相似(≥阈值)的未分组商品依次归入；
+ * 输出组内相邻、组间保持原相对顺序，无图/解析失败的商品稳定排在最后。纯展示排序，不改存储。
+ */
+export async function orderProductsByImageSimilarity(
+  products: Product[],
+  threshold: number = IMAGE_SIMILARITY_THRESHOLD,
+): Promise<Product[]> {
+  if (!canUseFallbackVisualSearch()) return products
+
+  const signatures = new Map<string, FallbackSignature | null>()
+  for (const product of products) {
+    const image = getPrimaryProductImage(product)
+    if (!image) {
+      signatures.set(product.id, null)
+      continue
+    }
+    try {
+      signatures.set(product.id, await getFallbackSignature(image))
+    } catch {
+      signatures.set(product.id, null)
+    }
+  }
+
+  const groupOf = new Map<string, number>()
+  let groupCount = 0
+  for (const anchor of products) {
+    if (groupOf.has(anchor.id) || !signatures.get(anchor.id)) continue
+    const group = groupCount++
+    groupOf.set(anchor.id, group)
+    const queue = [anchor]
+    while (queue.length) {
+      const current = queue.shift()!
+      const currentSignature = signatures.get(current.id)
+      if (!currentSignature) continue
+      for (const other of products) {
+        if (groupOf.has(other.id) || !signatures.get(other.id)) continue
+        if (calculateFallbackSimilarity(currentSignature, signatures.get(other.id)!) >= threshold) {
+          groupOf.set(other.id, group)
+          queue.push(other)
+        }
+      }
+    }
+  }
+
+  const trailingGroup = groupCount
+  return [...products].sort((left, right) => {
+    const leftGroup = groupOf.get(left.id) ?? trailingGroup
+    const rightGroup = groupOf.get(right.id) ?? trailingGroup
+    return leftGroup - rightGroup
+  })
+}
+
 export async function searchProductsByStoredFile(
   file: StoredFile,
   products: Product[],

@@ -66,11 +66,16 @@
 
       <div v-if="!showSearchHistoryPanel" class="summary-row">
         <span>共 {{ filteredProducts.length }} 件商品</span>
-        <button v-if="hasActiveFilters" class="summary-action" type="button" @click="clearActiveFilters">
-          <el-icon><CircleCloseFilled /></el-icon>
-          清除搜索
-        </button>
-        <span v-else>显示全部商品</span>
+        <span class="summary-actions">
+          <button v-if="hasActiveFilters" class="summary-action" type="button" @click="clearActiveFilters">
+            <el-icon><CircleCloseFilled /></el-icon>
+            清除搜索
+          </button>
+          <span v-else>显示全部商品</span>
+          <button v-if="!photoSearchResults" class="summary-action" type="button" @click="toggleSortOrder">
+            {{ sortOrder === 'similar' ? (similarityComputing ? '相似度排序中…' : '排序：画面相似') : '排序：最近更新' }}
+          </button>
+        </span>
       </div>
 
       <div v-if="photoSearchSummary && !showSearchHistoryPanel" class="photo-search-hint panel-card">
@@ -130,7 +135,7 @@
                       <h3>{{ product.name }}</h3>
                       <span v-if="matchMap[product.id]" class="match-badge">{{ matchMap[product.id].matchLevel }}</span>
                     </div>
-                    <p class="description-line">{{ product.description || '暂无商品描述' }}</p>
+                    <p class="description-line">{{ cardDescription(product) }}</p>
                   </div>
                   <strong class="price-text">{{ formatPrice(product.price) }}</strong>
                 </div>
@@ -221,6 +226,10 @@
             <el-button class="settings-action" @click="handleExportAgentMallCsv">
               <el-icon><Box /></el-icon>
               导出 AgentMall CSV
+            </el-button>
+            <el-button class="settings-action" :loading="exporting" @click="handleExportAgentMallPackage">
+              <el-icon><Box /></el-icon>
+              导出 AgentMall 素材包
             </el-button>
             <el-button class="settings-action" @click="openImportPicker">
               <el-icon><Upload /></el-icon>
@@ -327,6 +336,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { exportBackup, importProducts } from '../services/backup-service'
 import { exportAgentMallCsv } from '../services/agentmall-export'
+import { exportAgentMallPackage } from '../services/agentmall-package'
 import { exportProductsPdf } from '../services/product-pdf-export-service'
 import { deleteStoredFile, readImportFile, resolveFileUrl, saveFile, savePhotoBlob } from '../services/file-service'
 import { clearPendingProductCreateDraft, setPendingProductCreateDraft } from '../services/product-create-draft'
@@ -334,16 +344,20 @@ import type { ProductCreateDraft } from '../services/product-create-draft'
 import { formatPrice } from '../services/product-format'
 import {
   clearSearchHistory,
+  getListSortOrder,
   getListViewMode,
   getSearchHistory,
   pushSearchHistory,
   removeSearchHistory,
+  setListSortOrder,
   setListViewMode,
+  type ListSortOrder,
 } from '../services/list-ui-store'
 import { listProducts } from '../services/product-store'
 import {
   ensureVisualIndexes,
   isVisualSearchSupported,
+  orderProductsByImageSimilarity,
   searchProductsByStoredFile,
 } from '../services/visual-search-service'
 import { getPrimaryProductImage, isVideoStoredFile } from '../types/product'
@@ -362,6 +376,10 @@ const loading = ref(true)
 const searchOpen = ref(false)
 const searchText = ref('')
 const viewMode = ref<ViewMode>('card')
+const sortOrder = ref<ListSortOrder>('similar')
+const similarityOrderIds = ref<string[]>([])
+const similarityComputing = ref(false)
+let similarityGeneration = 0
 const searchHistory = ref<string[]>([])
 const imageMap = ref<Record<string, string>>({})
 const importInput = ref<HTMLInputElement | null>(null)
@@ -406,16 +424,27 @@ const drawerStyle = computed(() => ({
 
 const hasActiveFilters = computed(() => Boolean(searchText.value.trim() || photoSearchResults.value))
 const showSearchHistoryPanel = computed(() => searchOpen.value && !hasActiveFilters.value)
+function applySimilarityOrder(list: Product[]): Product[] {
+  if (sortOrder.value !== 'similar' || photoSearchResults.value || !similarityOrderIds.value.length) return list
+
+  const orderMap = new Map(similarityOrderIds.value.map((id, index) => [id, index]))
+  return [...list].sort(
+    (left, right) => (orderMap.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (orderMap.get(right.id) ?? Number.MAX_SAFE_INTEGER),
+  )
+}
+
 const textFilteredProducts = computed(() => {
   const keyword = searchText.value.trim().toLowerCase()
-  if (!keyword) return products.value
+  if (!keyword) return applySimilarityOrder(products.value)
 
-  return products.value.filter((product) => {
-    return [product.name, product.description, product.supplierName, product.supplierPhone]
-      .join(' ')
-      .toLowerCase()
-      .includes(keyword)
-  })
+  return applySimilarityOrder(
+    products.value.filter((product) => {
+      return [product.name, product.description, product.supplierName, product.supplierPhone]
+        .join(' ')
+        .toLowerCase()
+        .includes(keyword)
+    }),
+  )
 })
 const filteredProducts = computed(() => {
   if (!photoSearchResults.value) return textFilteredProducts.value
@@ -453,6 +482,14 @@ function productHasVideo(product: Product): boolean {
   return product.attachments.some((file) => isVideoStoredFile(file))
 }
 
+/** 卡片描述单行展示：视频录入的自动来源信息太长，收成简短提示，完整内容在编辑页可见。 */
+function cardDescription(product: Product): string {
+  const text = product.description.trim()
+  if (!text) return '暂无商品描述'
+  if (text.startsWith('视频来源：')) return '来自视频录入，待完善描述'
+  return text
+}
+
 async function refreshImages(): Promise<void> {
   const entries = await Promise.all(
     products.value.map(async (product) => {
@@ -483,18 +520,51 @@ async function prepareVisualSearch(notify = false): Promise<void> {
   }
 }
 
+/** 后台按画面相似度聚类（相似商品相邻）；完成前保持原顺序展示。 */
+async function recomputeSimilarityOrder(): Promise<void> {
+  const run = ++similarityGeneration
+  if (products.value.length < 2) {
+    similarityOrderIds.value = products.value.map((product) => product.id)
+    similarityComputing.value = false
+    return
+  }
+
+  similarityComputing.value = true
+  try {
+    const ordered = await orderProductsByImageSimilarity(products.value)
+    if (run !== similarityGeneration) return
+    similarityOrderIds.value = ordered.map((product) => product.id)
+  } catch {
+    return
+  } finally {
+    if (run === similarityGeneration) similarityComputing.value = false
+  }
+}
+
+async function toggleSortOrder(): Promise<void> {
+  const next: ListSortOrder = sortOrder.value === 'similar' ? 'recent' : 'similar'
+  sortOrder.value = next
+  await setListSortOrder(next)
+}
+
 async function loadData(): Promise<void> {
   loading.value = true
   products.value = await listProducts()
   await refreshImages()
   loading.value = false
   void prepareVisualSearch(false)
+  void recomputeSimilarityOrder()
 }
 
 async function loadUiState(): Promise<void> {
-  const [storedViewMode, storedSearchHistory] = await Promise.all([getListViewMode(), getSearchHistory()])
+  const [storedViewMode, storedSearchHistory, storedSortOrder] = await Promise.all([
+    getListViewMode(),
+    getSearchHistory(),
+    getListSortOrder(),
+  ])
   viewMode.value = storedViewMode
   searchHistory.value = storedSearchHistory
+  sortOrder.value = storedSortOrder
 }
 
 function clearCreateCameraTimer(): void {
@@ -1040,6 +1110,22 @@ async function handleExportAgentMallCsv(): Promise<void> {
   }
 }
 
+async function handleExportAgentMallPackage(): Promise<void> {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    const products = await listProducts()
+    await exportAgentMallPackage(products)
+    closeSettings()
+    showToast('素材包已导出；请发送到微信并在店主端导入')
+  } catch (error) {
+    console.error(error)
+    showToast(error instanceof Error ? error.message : '导出素材包失败，请稍后重试', 'danger')
+  } finally {
+    exporting.value = false
+  }
+}
+
 async function handleExport(): Promise<void> {
   if (exporting.value) return
 
@@ -1308,6 +1394,13 @@ onMounted(async () => {
   font-size: 13px;
 }
 
+.summary-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
 .summary-action {
   display: inline-flex;
   align-items: center;
@@ -1497,9 +1590,8 @@ onMounted(async () => {
   color: var(--app-text-secondary);
   font-size: 13px;
   line-height: 1.4;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   overflow: hidden;
 }
 

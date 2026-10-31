@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { strFromU8, unzipSync } from 'fflate'
 
 const storageKey = 'CapacitorStorage.product_item_products'
 const listUiKey = 'CapacitorStorage.product_item_list_ui'
@@ -178,6 +179,41 @@ test('设置页导出 AgentMall CSV，含分类与空值占位', async ({ page }
   expect(csv).toContain('冷藏操作台,制冷冰柜,,,个')
 })
 
+test('设置页导出 AgentMall 素材包，manifest 与图片可解包核对', async ({ page }) => {
+  await page.goto('/')
+  await writeProducts(page, [
+    baseProduct({ images: [dataUrlImage(), dataUrlImage()], image: dataUrlImage() }),
+    baseProduct({ id: 'seed-2', name: '冷藏操作台', category: '', quantity: null, price: null, unit: '' }),
+  ])
+  await page.goto('/')
+  await openSettings(page)
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: '导出 AgentMall 素材包' }).click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toMatch(/^agentmall-素材包-\d{8}\.zip$/)
+  const chunks = []
+  for await (const chunk of await download.createReadStream()) chunks.push(chunk)
+  const zip = unzipSync(new Uint8Array(Buffer.concat(chunks)))
+  expect(Object.keys(zip).sort()).toEqual(['images/p0-0.png', 'images/p0-1.png', 'manifest.json'])
+  expect(zip['images/p0-0.png'].length).toBeGreaterThan(0)
+  const manifest = JSON.parse(strFromU8(zip['manifest.json']))
+  expect(manifest.version).toBe(1)
+  expect(manifest.products[0]).toMatchObject({
+    name: '圆桌', category: '桌椅宴会', priceYuan: 180, stock: 4, unit: '张',
+    images: ['images/p0-0.png', 'images/p0-1.png'],
+  })
+  expect(manifest.products[1]).toMatchObject({
+    name: '冷藏操作台', category: '制冷冰柜', priceYuan: null, stock: null, unit: '个', images: [],
+  })
+})
+
+test('空库导出素材包给出提示，不产出文件', async ({ page }) => {
+  await page.goto('/')
+  await openSettings(page)
+  await page.getByRole('button', { name: '导出 AgentMall 素材包' }).click()
+  await expect(page.getByText('还没有商品可导出')).toBeVisible()
+})
+
 test('PDF 导出可下载且包含商品数据', async ({ page }, testInfo) => {
   await page.goto('/')
   await writeProducts(page, [baseProduct({ images: [dataUrlImage()], image: dataUrlImage() })])
@@ -266,4 +302,46 @@ test('3D 模型生成服务输出 GLB，媒体页与模型页状态正确', asyn
   await expect(page.getByText('还没有 3D 模型')).toBeVisible()
   await page.goto('/product/not-exist/media')
   await expect(page.getByText('商品不存在')).toBeVisible()
+})
+
+
+test('列表默认按画面相似度聚类排序，相似商品相邻，可切回最近更新', async ({ page }) => {
+  await page.goto('/')
+  await page.evaluate(async ({ key }) => {
+    const makeImage = (horizontal) => {
+      const canvas = document.createElement('canvas')
+      canvas.width = 64
+      canvas.height = 64
+      const context = canvas.getContext('2d')
+      for (let pos = 0; pos < 64; pos += 8) {
+        context.fillStyle = pos % 16 === 0 ? '#111' : '#eee'
+        if (horizontal) context.fillRect(0, pos, 64, 8)
+        else context.fillRect(pos, 0, 8, 64)
+      }
+      return canvas.toDataURL('image/png')
+    }
+    const stripesA = makeImage(false)
+    const stripesB = makeImage(true)
+    const file = (path) => ({ path, name: 'p.png', mimeType: 'image/png', size: path.length, kind: 'image' })
+    const product = (id, name, path, minutes) => ({ id, name, price: null, description: '', supplierName: '', supplierPhone: '', image: path ? file(path) : null, images: path ? [file(path)] : [], attachments: [], model3d: null, createdAt: '2026-10-31T00:00:00Z', updatedAt: `2026-10-31T00:${String(minutes).padStart(2, '0')}:00Z` })
+    localStorage.setItem(key, JSON.stringify([
+      product('a1', '条纹A一', stripesA, 1),
+      product('b1', '横纹B', stripesB, 2),
+      product('a2', '条纹A二', stripesA, 3),
+      product('c1', '无图C', null, 4),
+    ]))
+  }, { key: 'CapacitorStorage.product_item_products' })
+  await page.goto('/')
+  const cardNames = page.locator('.product-card h3')
+  await expect(page.getByRole('button', { name: '排序：画面相似' })).toBeVisible({ timeout: 15000 })
+  // 等相似度聚类完成：锚定商品是存储顺序中首个有图者（条纹A二），同图条纹A一紧随其后
+  await expect(cardNames.first()).toHaveText('条纹A二', { timeout: 15000 })
+  const titles = await cardNames.allTextContents()
+  expect(titles.slice(0, 4)).toEqual(['条纹A二', '条纹A一', '横纹B', '无图C'])
+  // 切回最近更新：恢复存储顺序（更新时间降序 c1,b1,a2,a1）
+  await page.getByRole('button', { name: '排序：画面相似' }).click()
+  await expect(page.getByRole('button', { name: '排序：最近更新' })).toBeVisible()
+  await expect(cardNames.first()).toHaveText('无图C', { timeout: 15000 })
+  const titlesRecent = await cardNames.allTextContents()
+  expect(titlesRecent.slice(0, 4)).toEqual(['无图C', '条纹A二', '横纹B', '条纹A一'])
 })
